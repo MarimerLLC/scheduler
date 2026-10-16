@@ -14,8 +14,9 @@ it when a decision changes.
 
 ## Conventions
 
-- Every scheduling rule lives in `ISchedulingService` (`Scheduler.Core`, implemented in `Scheduler.Data`).
-  MCP tools and Blazor pages stay thin wrappers so agents and people get the same behavior.
+- Every scheduling rule lives in `ISchedulingService`, and every administration rule in `IAdminService`
+  (both in `Scheduler.Core`, implemented in `Scheduler.Data`). MCP tools and Blazor pages stay thin wrappers
+  so agents and people get the same behavior; hiding a tool or a button is never the access check.
 - Times are NodaTime. A slot's source of truth is local wall time + IANA zone; the `Instant` is derived.
   All local-to-UTC conversion goes through `SlotTimeResolver`. Never accept zone abbreviations or fixed offsets.
 - User-supplied text has hard limits in `FieldLimits`; it is read by other people's agents (prompt injection).

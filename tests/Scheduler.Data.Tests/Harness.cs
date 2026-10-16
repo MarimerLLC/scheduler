@@ -22,24 +22,28 @@ internal sealed class Harness
     public static readonly CallerIdentity Carol = Caller("carol@example.com");
     public static readonly CallerIdentity Dave = Caller("dave@example.com");
     public static readonly CallerIdentity Mallory = Caller("mallory@example.com");
+    public static readonly CallerIdentity Admin = Caller("admin@example.com");
 
     private Harness(IDbContextFactory<SchedulerDbContext> db, FakeClock clock, MagicLinks links)
     {
         Db = db;
         Clock = clock;
         Links = links;
-        Service = new SchedulingService(
-            db,
-            clock,
-            Options.Create(new SchedulingOptions { Organizers = ["rocky@example.com", "*@marimer.llc"], PublicBaseUrl = BaseUrl }),
-            links,
-            new PlainTextEmailComposer(BaseUrl + "/mcp"));
+        var options = Options.Create(new SchedulingOptions
+        {
+            Organizers = ["rocky@example.com", "*@marimer.llc"],
+            Admins = ["admin@example.com"],
+            PublicBaseUrl = BaseUrl,
+        });
+        Service = new SchedulingService(db, clock, options, links, new PlainTextEmailComposer(BaseUrl + "/mcp"));
+        AdminService = new AdminService(db, clock, options);
     }
 
     public IDbContextFactory<SchedulerDbContext> Db { get; }
     public FakeClock Clock { get; }
     public MagicLinks Links { get; }
     public SchedulingService Service { get; }
+    public AdminService AdminService { get; }
 
     public static CallerIdentity Caller(string email) => new(null, [email], Channel.Mcp);
 

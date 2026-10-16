@@ -26,8 +26,13 @@ public sealed record McpVote(
 /// a <see cref="SchedulingException"/> into an <see cref="McpException"/> so its message reaches the agent.
 /// </summary>
 [McpServerToolType]
-public sealed class SchedulingTools(ISchedulingService scheduling, IHttpContextAccessor http, IHostEnvironment environment)
+public sealed class SchedulingTools(ISchedulingService scheduling, IAdminService admin, IHttpContextAccessor http, IHostEnvironment environment)
 {
+    [McpServerTool(Name = "get_my_access", Title = "What can I do here?", ReadOnly = true, Idempotent = true, OpenWorld = false)]
+    [Description("Shows the user's verified addresses on this server and whether they may create scheduling events (canOrganize) or administer the server (isAdmin). Anyone invited to an event can vote without being an organizer.")]
+    public Task<string> GetMyAccess(CancellationToken cancellationToken = default) =>
+        Run(caller => admin.GetAccessAsync(caller, cancellationToken));
+
     [McpServerTool(Name = "create_event", Title = "Create scheduling event", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = true)]
     [Description("Start scheduling a meeting: proposes candidate times that already work for the organizer and emails each participant a request to vote. Only allowlisted organizers can create events. Returns the event, including its id and shortCode.")]
     public Task<string> CreateEvent(

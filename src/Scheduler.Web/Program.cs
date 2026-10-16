@@ -1,8 +1,10 @@
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.Extensions.Options;
 using Scheduler.Core.Email;
 using Scheduler.Web;
 using Scheduler.Web.Components;
 using Scheduler.Web.Email;
+using Scheduler.Web.Identity;
 using Scheduler.Web.Mcp;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -20,10 +22,25 @@ else
     builder.Services.AddSingleton<IEmailSender, LogOnlyEmailSender>();
 builder.Services.AddHostedService<OutboxDispatcher>();
 
-// Identity is not wired up yet (docs/design.md, "Identity"). With no scheme registered, any endpoint that
-// requires authorization fails closed.
-builder.Services.AddAuthentication();
+// Browser sign-in is a cookie. Until OIDC (roadmap item 3, docs/design.md "Identity") only Development can
+// issue one, through DevSignIn. /mcp answers 401 instead of redirecting a client to a sign-in page.
+builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(options =>
+    {
+        options.LoginPath = builder.Environment.IsDevelopment() ? DevSignIn.SignInPath : "/signin";
+        options.Cookie.Name = "scheduler.auth";
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.Events.OnRedirectToLogin = context =>
+        {
+            if (context.Request.Path.StartsWithSegments("/mcp"))
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            else
+                context.Response.Redirect(context.RedirectUri);
+            return Task.CompletedTask;
+        };
+    });
 builder.Services.AddAuthorization();
+builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddHttpContextAccessor();
 
 builder.Services.AddRazorComponents()
@@ -35,7 +52,9 @@ builder.Services
     // any call. Revisit when adding the optional wait_for_update task (docs/design.md, "MCP Tasks").
     .WithHttpTransport(options => options.Stateless = true)
     .WithTools<SchedulingTools>()
-    .WithPrompts<SchedulingPrompts>();
+    .WithTools<AdminTools>()
+    .WithPrompts<SchedulingPrompts>()
+    .WithRequestFilters(filters => filters.AddListToolsFilter(AdminTools.HideFromNonAdmins));
 
 var app = builder.Build();
 
@@ -61,6 +80,7 @@ var mcp = app.MapMcp("/mcp");
 if (!app.Environment.IsDevelopment())
     mcp.RequireAuthorization();
 
+app.MapDevSignIn();
 app.MapDefaultEndpoints();
 
 await app.RunAsync();

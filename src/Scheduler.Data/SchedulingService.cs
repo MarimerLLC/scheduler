@@ -38,7 +38,7 @@ public sealed class SchedulingService(
         var now = clock.GetCurrentInstant();
 
         var account = await FindAccountAsync(db, caller, cancellationToken);
-        if (account?.CanOrganize != true && !caller.VerifiedEmails.Any(Options.IsAllowlistedOrganizer))
+        if (!await OrganizerPolicy.CanOrganizeAsync(db, Options, OwnEmails(caller, account), cancellationToken))
             throw new SchedulingForbiddenException("You aren't on this server's list of organizers. Ask its administrator to add you.");
         account ??= await ProvisionAccountAsync(db, caller, now, cancellationToken);
 
@@ -334,7 +334,7 @@ public sealed class SchedulingService(
     private sealed record Access(bool IsOrganizer, IReadOnlyList<Participant> Me);
 
     /// <summary>The caller's account: by ID if the identity layer gave one, else by any verified address.</summary>
-    private static async Task<UserAccount?> FindAccountAsync(SchedulerDbContext db, CallerIdentity caller, CancellationToken cancellationToken)
+    internal static async Task<UserAccount?> FindAccountAsync(SchedulerDbContext db, CallerIdentity caller, CancellationToken cancellationToken)
     {
         if (caller.MagicLinkEventId is not null)
             return null;
@@ -364,7 +364,7 @@ public sealed class SchedulingService(
         return account;
     }
 
-    private static HashSet<string> OwnEmails(CallerIdentity caller, UserAccount? account)
+    internal static HashSet<string> OwnEmails(CallerIdentity caller, UserAccount? account)
     {
         var emails = caller.VerifiedEmails.ToHashSet(StringComparer.Ordinal);
         if (account is not null)

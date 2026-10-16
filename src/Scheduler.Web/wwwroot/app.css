@@ -2,10 +2,6 @@ h1:focus {
     outline: none;
 }
 
-.valid.modified:not([type=checkbox]) {
-    outline: 1px solid #26b050;
-}
-
 .invalid {
     outline: 1px solid #e50000;
 }
@@ -35,4 +31,91 @@ h1:focus {
 
 .form-floating > .form-control-plaintext:focus::placeholder, .form-floating > .form-control:focus::placeholder {
     text-align: start;
+}
+/* Site */
+:root {
+    --text: #1f2328;
+    --muted: #59636e;
+    --border: #d1d9e0;
+    --surface: #f6f8fa;
+    --accent: #0969da;
+    --danger: #cf222e;
+    --background: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --text: #e6edf3;
+        --muted: #9198a1;
+        --border: #3d444d;
+        --surface: #151b23;
+        --accent: #4493f8;
+        --danger: #f85149;
+        --background: #0d1117;
+    }
+}
+
+body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: var(--text);
+    background: var(--background);
+    line-height: 1.5;
+}
+
+a { color: var(--accent); }
+/* Naming real fonts avoids browsers shrinking the generic "monospace" family. */
+code { font-family: ui-monospace, "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace; font-size: 0.9em; }
+
+.site-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem 1.5rem;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.site-header .brand { font-weight: 600; color: var(--text); text-decoration: none; }
+.site-header nav { display: flex; gap: 1rem; }
+.site-header .account { margin-left: auto; color: var(--muted); display: flex; gap: 0.75rem; }
+
+main { max-width: 60rem; margin: 0 auto; padding: 1rem; }
+
+/* Organizers admin page */
+.add-organizer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: 0.75rem;
+    margin: 1rem 0;
+}
+
+.add-organizer label { display: flex; flex-direction: column; gap: 0.25rem; flex: 1 1 14rem; }
+.hint { color: var(--muted); font-weight: normal; }
+
+input, button {
+    font: inherit;
+    color: inherit;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--background);
+}
+
+button { background: var(--surface); cursor: pointer; }
+button:disabled { opacity: 0.6; cursor: default; }
+button.danger { color: var(--danger); border-color: var(--danger); }
+
+.message { padding: 0.5rem 0.75rem; border-left: 3px solid var(--accent); background: var(--surface); }
+.message.error { border-left-color: var(--danger); }
+
+table.organizers { width: 100%; border-collapse: collapse; }
+table.organizers th, table.organizers td { text-align: left; padding: 0.5rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+table.organizers td:last-child { white-space: nowrap; }
+
+@media (max-width: 40rem) {
+    table.organizers thead { display: none; }
+    table.organizers tr { display: block; border-bottom: 1px solid var(--border); padding: 0.5rem 0; }
+    table.organizers td { display: block; border: none; padding: 0.15rem 0; }
 }

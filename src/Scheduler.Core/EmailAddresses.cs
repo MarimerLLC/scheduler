@@ -10,11 +10,22 @@ public static class EmailAddresses
         var trimmed = email?.Trim() ?? "";
         if (trimmed.Length is 0 or > FieldLimits.EmailMax
             || !MailAddress.TryCreate(trimmed, out var parsed)
-            || !string.Equals(parsed.Address, trimmed, StringComparison.OrdinalIgnoreCase))
+            || !string.Equals(parsed.Address, trimmed, StringComparison.OrdinalIgnoreCase)
+            || !IsDeliverableDomain(parsed.Host))
         {
             throw new SchedulingValidationException($"'{trimmed}' isn't a valid email address.");
         }
 
         return parsed.Address.ToLowerInvariant();
     }
+
+    /// <summary>
+    /// <see cref="MailAddress"/> accepts hosts like <c>*.example.com</c> or <c>localhost</c>; an address this
+    /// server emails must have a dotted domain of letters, digits and hyphens.
+    /// </summary>
+    private static bool IsDeliverableDomain(string host) =>
+        host.Contains('.')
+        && host.Split('.').All(label => label.Length > 0
+            && label.All(c => char.IsLetterOrDigit(c) || c == '-')
+            && label[0] != '-' && label[^1] != '-');
 }

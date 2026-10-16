@@ -21,6 +21,7 @@ public sealed class SchedulerDbContext(DbContextOptions<SchedulerDbContext> opti
     public DbSet<AuditEntry> Audit => Set<AuditEntry>();
     public DbSet<OutboxEmail> Outbox => Set<OutboxEmail>();
     public DbSet<EmailSuppression> Suppressions => Set<EmailSuppression>();
+    public DbSet<OrganizerGrant> OrganizerGrants => Set<OrganizerGrant>();
 
     protected override void OnModelCreating(ModelBuilder model)
     {
@@ -115,6 +116,14 @@ public sealed class SchedulerDbContext(DbContextOptions<SchedulerDbContext> opti
             e.Property(x => x.ProviderMessageId).HasMaxLength(256);
             e.HasIndex(x => x.NextAttemptAt).HasFilter("\"Status\" = 'Pending'");
             e.HasIndex(x => x.EventId);
+        });
+
+        model.Entity<OrganizerGrant>(e =>
+        {
+            e.HasKey(x => x.Pattern);
+            e.Property(x => x.Pattern).HasMaxLength(OrganizerPatterns.MaxLength);
+            e.Property(x => x.Note).HasMaxLength(FieldLimits.NoteMax);
+            e.Property(x => x.GrantedBy).HasMaxLength(FieldLimits.EmailMax);
         });
 
         model.Entity<EmailSuppression>(e =>

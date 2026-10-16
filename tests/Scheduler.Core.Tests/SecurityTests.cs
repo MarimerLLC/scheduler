@@ -111,6 +111,10 @@ public sealed class SecurityTests
     [DataRow("not an address")]
     [DataRow("Rocky <rocky@example.com>")]
     [DataRow("a@example.com, b@example.com")]
+    [DataRow("bob@*.example.com")]
+    [DataRow("bob@localhost")]
+    [DataRow("bob@-example.com")]
+    [DataRow("bob@example..com")]
     [DataRow("")]
     public void AnythingButOnePlainAddressIsRejected(string email)
     {

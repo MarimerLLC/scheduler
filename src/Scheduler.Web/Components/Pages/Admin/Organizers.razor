@@ -1,0 +1,163 @@
+@page "/admin/organizers"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Components.Authorization
+@using Scheduler.Core
+@using Scheduler.Core.Model
+@using Scheduler.Core.Services
+@using Scheduler.Web.Identity
+@inject IAdminService Admin
+@inject IWebHostEnvironment Environment
+
+@* Interactive: an admin adds and removes entries in place. Every action goes through IAdminService,
+   which checks admin rights again, so this page only decides what to show. *@
+
+<PageTitle>Organizers</PageTitle>
+
+<h1>Organizers</h1>
+
+@if (_loading)
+{
+    <p>Loading…</p>
+}
+else if (_caller is null)
+{
+    <p>Sign in to manage organizers.</p>
+    @if (Environment.IsDevelopment())
+    {
+        <p><a href="@($"{DevSignIn.SignInPath}?returnUrl=/admin/organizers")" data-enhance-nav="false">Development sign-in</a></p>
+    }
+}
+else if (_access is not { IsAdmin: true })
+{
+    <p>Only server admins can manage organizers. You're signed in as @string.Join(", ", _access?.Emails ?? []).</p>
+}
+else
+{
+    <p>
+        People on this list can create scheduling events. Anyone invited to an event can vote without being on it.
+        Removing someone stops them creating new events; events they already organize stay theirs.
+    </p>
+
+    <EditForm Model="_form" OnSubmit="AddAsync" class="add-organizer">
+        <label>
+            <span>Address or domain</span>
+            <InputText @bind-Value="_form.Entry" placeholder="@EntryPlaceholder" maxlength="@OrganizerPatterns.MaxLength" />
+        </label>
+        <label>
+            <span>Note <span class="hint">(optional)</span></span>
+            <InputText @bind-Value="_form.Note" maxlength="@FieldLimits.NoteMax" />
+        </label>
+        <button type="submit" disabled="@_busy">Add</button>
+    </EditForm>
+
+    @if (_message is not null)
+    {
+        <p class="@(_isError ? "message error" : "message")" role="status">@_message</p>
+    }
+
+    <table class="organizers">
+        <thead>
+            <tr><th>Entry</th><th>Source</th><th>Note</th><th>Added</th><th></th></tr>
+        </thead>
+        <tbody>
+            @foreach (var entry in _entries)
+            {
+                <tr>
+                    <td><code>@entry.Pattern</code>@(entry.Pattern == "*" ? " (anyone)" : entry.IsDomain ? " (everyone at this domain)" : "")</td>
+                    <td>@(entry.Source == OrganizerSource.Configuration ? "Server configuration" : "Granted")</td>
+                    <td>@entry.Note</td>
+                    <td>@(entry.GrantedAt is null ? "" : $"{entry.GrantedAt} by {entry.GrantedBy}")</td>
+                    <td>
+                        @if (entry.Source == OrganizerSource.Granted)
+                        {
+                            @if (_confirmRemove == entry.Pattern)
+                            {
+                                <button class="danger" disabled="@_busy" @onclick="() => RemoveAsync(entry.Pattern)">Confirm remove</button>
+                                <button disabled="@_busy" @onclick="() => _confirmRemove = null">Keep</button>
+                            }
+                            else
+                            {
+                                <button disabled="@_busy" @onclick="() => _confirmRemove = entry.Pattern">Remove</button>
+                            }
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthenticationState { get; set; }
+
+    private sealed class AddForm
+    {
+        public string? Entry { get; set; }
+        public string? Note { get; set; }
+    }
+
+    private const string EntryPlaceholder = "bob@example.com or *@example.com";
+
+    private readonly AddForm _form = new();
+    private CallerIdentity? _caller;
+    private CallerAccess? _access;
+    private IReadOnlyList<OrganizerEntry> _entries = [];
+    private bool _loading = true;
+    private bool _busy;
+    private string? _confirmRemove;
+    private string? _message;
+    private bool _isError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = AuthenticationState is null ? null : await AuthenticationState;
+        _caller = CallerResolver.FromPrincipal(state?.User, Channel.Web);
+        if (_caller is not null)
+        {
+            _access = await Admin.GetAccessAsync(_caller, CancellationToken.None);
+            if (_access.IsAdmin)
+                _entries = await Admin.ListOrganizersAsync(_caller, CancellationToken.None);
+        }
+        _loading = false;
+    }
+
+    private async Task AddAsync()
+    {
+        await RunAsync(async () =>
+        {
+            var added = await Admin.AddOrganizerAsync(_caller!, _form.Entry ?? "", _form.Note, CancellationToken.None);
+            _form.Entry = _form.Note = null;
+            return $"{added.Pattern} can now organize.";
+        });
+    }
+
+    private async Task RemoveAsync(string pattern)
+    {
+        await RunAsync(async () =>
+        {
+            await Admin.RemoveOrganizerAsync(_caller!, pattern, CancellationToken.None);
+            return $"{pattern} can no longer create new events.";
+        });
+    }
+
+    private async Task RunAsync(Func<Task<string>> action)
+    {
+        _busy = true;
+        try
+        {
+            _message = await action();
+            _isError = false;
+            _entries = await Admin.ListOrganizersAsync(_caller!, CancellationToken.None);
+        }
+        catch (SchedulingException ex)
+        {
+            _message = ex.Message;
+            _isError = true;
+        }
+        finally
+        {
+            _busy = false;
+            _confirmRemove = null;
+        }
+    }
+}
