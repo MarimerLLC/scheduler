@@ -16,8 +16,11 @@ public sealed class Participant
     public string? DisplayName { get; set; }
     public AttendeeRole Role { get; set; } = AttendeeRole.Required;
 
-    /// <summary>SHA-256 of the magic-link token. The token itself is only ever in the email.</summary>
-    public required byte[] TokenHash { get; set; }
+    /// <summary>
+    /// Random value the participant's voting-link token is derived from (see <c>MagicLinks</c>). The token
+    /// itself is never stored; replacing the nonce revokes the link.
+    /// </summary>
+    public required byte[] TokenNonce { get; set; }
 
     public Instant InvitedAt { get; set; }
     public Instant? LastRemindedAt { get; set; }

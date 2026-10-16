@@ -37,7 +37,8 @@ public sealed class SchedulingTools(ISchedulingService scheduling, IHttpContextA
         [Description("People to invite, at most 50. Don't include the organizer.")] McpParticipant[] participants,
         [Description("Candidate start times, 1 to 20, each local wall time plus IANA zone.")] McpSlot[] slots,
         [Description("Optional agenda or context, at most 1000 characters.")] string? description = null,
-        [Description("Optional voting deadline as local wall time in the organizer's zone, e.g. 2026-10-30T17:00.")] string? respondBy = null,
+        [Description("Optional voting deadline as local wall time in the organizer's zone, e.g. 2026-10-30T17:00. Must be before the last proposed time.")] string? respondBy = null,
+        [Description("Optional: the organizer's name as participants should see it.")] string? organizerName = null,
         CancellationToken cancellationToken = default) =>
         Run(caller => scheduling.CreateEventAsync(caller, new CreateEventRequest(
             title,
@@ -46,7 +47,8 @@ public sealed class SchedulingTools(ISchedulingService scheduling, IHttpContextA
             organizerTimeZone,
             participants.Select(p => new ParticipantInput(p.Email, p.Name, p.Optional ? AttendeeRole.Optional : AttendeeRole.Required)).ToList(),
             slots.Select(s => new SlotInput(s.Start, s.TimeZone)).ToList(),
-            respondBy), cancellationToken));
+            respondBy,
+            organizerName), cancellationToken));
 
     [McpServerTool(Name = "list_my_events", Title = "List my scheduling events", ReadOnly = true, Idempotent = true, OpenWorld = false)]
     [Description("Lists scheduling events visible to the user. By default returns only events waiting for the user's vote.")]
@@ -78,14 +80,15 @@ public sealed class SchedulingTools(ISchedulingService scheduling, IHttpContextA
             cancellationToken));
 
     [McpServerTool(Name = "propose_more_slots", Title = "Propose more times", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = true)]
-    [Description("Organizer only: adds another round of candidate times, e.g. when none of the first round works. Emails participants who haven't voted on them.")]
+    [Description("Organizer only: adds another round of candidate times, e.g. when none of the first round works. Also reopens an expired event, or a finalized one that needs rescheduling. Emails participants about the new times.")]
     public Task<string> ProposeMoreSlots(
         [Description("The event's id or shortCode.")] string eventId,
         [Description("New candidate start times, each local wall time plus IANA zone.")] McpSlot[] slots,
         [Description("The event's version from the get_event result you are acting on.")] uint version,
+        [Description("Optional new voting deadline as local wall time in the organizer's zone. A deadline that has already passed is cleared.")] string? respondBy = null,
         CancellationToken cancellationToken = default) =>
         Run(caller => scheduling.ProposeMoreSlotsAsync(
-            caller, eventId, slots.Select(s => new SlotInput(s.Start, s.TimeZone)).ToList(), version, cancellationToken));
+            caller, eventId, slots.Select(s => new SlotInput(s.Start, s.TimeZone)).ToList(), respondBy, version, cancellationToken));
 
     [McpServerTool(Name = "withdraw_slot", Title = "Withdraw a proposed time", ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
     [Description("Organizer only: removes a candidate time that no longer works for the organizer. Its votes are discarded.")]

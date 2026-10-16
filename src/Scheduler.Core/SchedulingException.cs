@@ -18,3 +18,6 @@ public sealed class SchedulingAccessException()
 
 /// <summary>The event is in the wrong state for the request, or changed since the caller read it.</summary>
 public sealed class SchedulingConflictException(string message) : SchedulingException(message);
+
+/// <summary>The caller is known but not allowed to do this, e.g. create events without being an organizer.</summary>
+public sealed class SchedulingForbiddenException(string message) : SchedulingException(message);

@@ -3,7 +3,8 @@ namespace Scheduler.Core.Services;
 /// <summary>
 /// Every scheduling rule lives behind this interface. The MCP tools and the Blazor pages are thin
 /// wrappers over it, so agents and people always get the same behavior. <c>eventRef</c> parameters accept
-/// either the event's ID or its short code.
+/// either the event's ID or its short code. Organizer edits take the <c>Version</c> from the view the
+/// caller acted on, and fail with a conflict if the event changed since.
 /// </summary>
 public interface ISchedulingService
 {
@@ -16,10 +17,14 @@ public interface ISchedulingService
     Task<EventView> GetEventAsync(CallerIdentity caller, string eventRef, string? viewerTimeZone, CancellationToken cancellationToken);
 
     /// <summary>Records or overwrites the caller's votes. Safe to retry.</summary>
+    /// <param name="note">Note to the organizer: null leaves it unchanged, empty clears it.</param>
     Task<EventView> VoteAsync(CallerIdentity caller, string eventRef, IReadOnlyList<VoteInput> votes, string? note, CancellationToken cancellationToken);
 
-    /// <summary>Adds a round of slots and notifies only participants who haven't voted on them.</summary>
-    Task<EventView> ProposeMoreSlotsAsync(CallerIdentity caller, string eventRef, IReadOnlyList<SlotInput> slots, uint expectedVersion, CancellationToken cancellationToken);
+    /// <summary>
+    /// Adds a round of slots and emails participants about them. Reopens an expired or finalized event
+    /// (rescheduling). <paramref name="respondBy"/> sets a new deadline; a deadline already past is cleared.
+    /// </summary>
+    Task<EventView> ProposeMoreSlotsAsync(CallerIdentity caller, string eventRef, IReadOnlyList<SlotInput> slots, string? respondBy, uint expectedVersion, CancellationToken cancellationToken);
 
     Task<EventView> WithdrawSlotAsync(CallerIdentity caller, string eventRef, Guid slotId, uint expectedVersion, CancellationToken cancellationToken);
 

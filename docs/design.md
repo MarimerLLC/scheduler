@@ -127,9 +127,9 @@ All tables in PostgreSQL via EF Core 10. Times are NodaTime types, mapped native
 
 | Entity | Key | Purpose |
 |---|---|---|
-| `SchedulingEvent` | `Id` (GUID v7) | One meeting being scheduled. Title, description, duration, organizer, organizer's IANA zone, state, respond-by, finalized slot, calendar UID, `ShortCode`, concurrency `Version` (`xmin`). |
+| `SchedulingEvent` | `Id` (GUID v7) | One meeting being scheduled. Title, description, duration, organizer (account, plus the address and name participants see), organizer's IANA zone, state, respond-by, finalized slot, calendar UID, `ShortCode`, `UpdatedAt`, concurrency `Version` (`xmin`). |
 | `ProposedSlot` | `Id` | A candidate start: `LocalStart` + `TimeZoneId` (source of truth) and derived `Start` (`Instant`). `Round`, `WithdrawnAt`. |
-| `Participant` | `Id`; unique (`EventId`, `Email`) | An invited address, its role (required/optional), the SHA-256 hash of its magic-link token, invited/reminded/responded times, optional note. |
+| `Participant` | `Id`; unique (`EventId`, `Email`) | An invited address, its role (required/optional), the random nonce its voting-link token is derived from, invited/reminded/responded times, optional note. |
 | `Vote` | (`ParticipantId`, `SlotId`) | One answer. The composite key makes voting an upsert, so retries are safe. Records the channel. |
 | `UserAccount` | `Id` | A signed-in person. `CanOrganize` is the organizer allowlist flag. |
 | `UserEmail` | `Email` | A verified address owned by one account. An account can have several. |
@@ -144,7 +144,8 @@ All tables in PostgreSQL via EF Core 10. Times are NodaTime types, mapped native
 - **`ShortCode`** is 8 Crockford base32 characters (no I, L, O, U), e.g. `7KQ2M9XD`. It goes in email
   subjects as `[sched:7KQ2M9XD]` so an agent reading mail can match a message to its event, and people can
   read it aloud. Tools accept either the ID or the short code. Not a secret.
-- **Magic-link tokens** are 256-bit random, URL-safe, one per participant. Only the SHA-256 hash is stored.
+- **Magic-link tokens** are HMAC-SHA256(server key, participant ID + nonce), URL-safe, one per participant.
+  Nothing secret is stored; see [Magic links](#magic-links-voters-without-an-account).
 
 ## State machine
 
@@ -178,8 +179,12 @@ Cancelled is terminal. Implemented in `SchedulingEvent.CanTransition`; anything 
 
 **Concurrency.** Organizer edits (`propose_more_slots`, `withdraw_slot`, `finalize_event`) carry the
 `version` from the `get_event` result the agent acted on. A mismatch is rejected ("the event changed since
-you read it"), so two agents, or an agent and the web UI, can't overwrite each other. Votes don't need a
-version: each participant's votes are their own rows.
+you read it"), so two agents, or an agent and the web UI, can't overwrite each other. The service checks
+the version up front for a clear message, and PostgreSQL checks it again at save (`xmin`), so an edit that
+races another one is refused too. Every organizer edit rewrites the event row (it sets `UpdatedAt` and marks
+it modified even when only child rows changed), which is what moves the version. Votes don't touch the
+event row, so a vote arriving doesn't invalidate the organizer's version: each participant's votes are
+their own rows.
 
 ## Votes, visibility and ranking
 
@@ -276,10 +281,22 @@ bearer token from RockBot's `mcp.json`.
 
 ### Magic links (voters without an account)
 
-Each invitation carries a per-participant link `/e/{shortCode}?t={token}`. Opening it identifies the voter
-as that participant for that event only (a short-lived cookie scoped to the event). Anyone the email is
-forwarded to can vote as the recipient; that is acceptable for meeting scheduling and matches what Doodle
-and similar tools do.
+Each email to a participant carries their personal link `/e/{shortCode}?t={token}`. Opening it identifies
+the voter as that participant for that event only (a short-lived cookie scoped to the event). Anyone the
+email is forwarded to can vote as the recipient; that is acceptable for meeting scheduling and matches what
+Doodle and similar tools do.
+
+The token is `HMAC-SHA256(key, participantId ‖ nonce)` (`MagicLinks`), not a stored random value. That lets
+the server put the same working link in the invitation, the "new times" email and the reminder without
+keeping the token anywhere: the database holds only a 16-byte random nonce per participant. Verifying a link
+recomputes the HMAC for the event's participants and compares in constant time. Giving a participant a new
+nonce revokes their link; rotating the key (`Scheduler:MagicLinkKey`, base64, at least 32 bytes) revokes
+every link. In Development a missing key is replaced by a random one at startup, so links stop working
+when the app restarts.
+
+In the service, a voting-link caller (`CallerIdentity.MagicLinkEventId`) is a participant of that one event
+and nothing else: it is never resolved to an account and is never the organizer, even if the address
+happens to be the organizer's.
 
 ### Development
 
@@ -429,8 +446,10 @@ Hosted services in the web process (single replica in v1):
 
 The server sends email to addresses it is given, so an open `create_event` would be a spam relay.
 
-- Only allowlisted organizers (`UserAccount.CanOrganize`) can create events. The allowlist is
-  configuration: addresses and domains (e.g. `*@marimer.llc`).
+- Only allowlisted organizers can create events. The allowlist is configuration, `Scheduler:Organizers`:
+  exact addresses, whole domains (`*@marimer.llc`), or `*` for anyone (Development only). An account's
+  `CanOrganize` flag also grants it, for one-off grants. An allowlisted caller's first `create_event`
+  provisions a `UserAccount` owning their verified addresses that no other account has claimed.
 - Rate limits per organizer (events per day, invitations per day) and on `/mcp` and the voting endpoints
   (ASP.NET Core rate limiting).
 - Participants never need an account to vote.
@@ -450,7 +469,7 @@ which has that person's mail and calendar tools.
 
 - Every call resolves the caller and checks they are the organizer or a participant.
   "Not found" and "not allowed" are the same answer.
-- Magic-link tokens are compared against stored hashes in constant time.
+- Magic-link tokens are verified by recomputing their HMAC and comparing in constant time.
 - Organizer-only operations check the organizer, not just participation.
 
 ## Privacy and retention
@@ -481,7 +500,7 @@ Purged with the event.
 | Email | `IEmailSender`: SMTP (Mailpit) in dev, hosted provider in production |
 | Local dev | Aspire 13 AppHost: PostgreSQL (+ pgAdmin), Mailpit |
 | Telemetry | OpenTelemetry via Aspire service defaults |
-| Tests | MSTest; Testcontainers PostgreSQL for service and data tests (to add) |
+| Tests | MSTest; Testcontainers PostgreSQL for service and data tests, each on a freshly migrated database |
 
 ### Projects
 
@@ -498,17 +517,19 @@ Purged with the event.
 - One container image (`Dockerfile` at the repo root), deployed to the `lhotkalake` cluster in its own
   namespace. One replica in v1.
 - PostgreSQL in-cluster (or managed), connection string `ConnectionStrings__schedulerdb` from a secret.
-- Secrets: OIDC client secrets, email provider key and webhook signing secret, OpenIddict signing keys.
+- Secrets: `Scheduler:MagicLinkKey`, OIDC client secrets, email provider key and webhook signing secret,
+  OpenIddict signing keys.
 - **Data Protection keys persisted to the database** (`PersistKeysToDbContext`), so cookies, magic-link
   sessions and unsubscribe tokens survive restarts.
-- Migrations applied by a migration bundle run as a job before rollout, not at app startup.
+- Migrations applied by a migration bundle run as a job before rollout, not at app startup. (In
+  Development only, the app applies them at startup so `dotnet run` under Aspire just works.)
 - Probes: `/alive` (liveness), `/health` (readiness).
 - Public hostname with TLS; the email sending subdomain set up separately.
 
 ## Roadmap
 
-1. **Core service.** Implement `SchedulingService`, first migration, integration tests against
-   Testcontainers PostgreSQL.
+1. ~~**Core service.** Implement `SchedulingService`, first migration, integration tests against
+   Testcontainers PostgreSQL.~~ Done. Notifications use a plain-text composer until item 2.
 2. **Email and voting page.** Templates, invitation/finalize/cancel flows through the outbox, magic-link
    voting page.
 3. **Identity.** Web OIDC sign-in, MCP OAuth (OpenIddict, federated login), personal access tokens,
