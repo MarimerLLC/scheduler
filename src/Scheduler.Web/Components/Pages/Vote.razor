@@ -1,0 +1,17 @@
+@page "/e/{Code}"
+
+@* Static server rendering on purpose: people open this from an email link, often on a phone. Plain
+   form posts need no long-lived connection and survive a flaky network. See docs/design.md, "Web UI". *@
+
+<PageTitle>Vote</PageTitle>
+
+<h1>Vote on meeting times</h1>
+
+<p>Event <code>@Code</code>. The voting page isn't implemented yet.</p>
+
+@code {
+    [Parameter] public string Code { get; set; } = "";
+
+    /// <summary>The participant's magic-link token, from the invitation email.</summary>
+    [SupplyParameterFromQuery(Name = "t")] public string? Token { get; set; }
+}

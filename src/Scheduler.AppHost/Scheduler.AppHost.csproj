@@ -1,0 +1,21 @@
+<Project Sdk="Aspire.AppHost.Sdk/13.6.1">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <UserSecretsId>scheduler-apphost-6f1c2a7e</UserSecretsId>
+    <!-- Runs with `dotnet run` and the Aspire SDK's own orchestration; the Aspire CLI isn't required. -->
+    <NoWarn>$(NoWarn);ASPIRE010</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Aspire.Hosting.PostgreSQL" Version="13.6.1" />
+    <PackageReference Include="CommunityToolkit.Aspire.Hosting.MailPit" Version="13.6.0" />
+    <!-- Transitive via Aspire.Hosting; 2.5.302 has GHSA-qhrr-8q5h-9q3h. Drop once Aspire ships the fix. -->
+    <PackageReference Include="MessagePack" Version="2.5.307" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Scheduler.Web\Scheduler.Web.csproj" />
+  </ItemGroup>
+
+</Project>

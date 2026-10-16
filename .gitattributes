@@ -1,0 +1,31 @@
+# Line endings.
+#
+# Every text file is LF, in the index AND in the working tree, on every platform.
+# `eol=lf` overrides core.autocrlf (Git for Windows ships it as `true` in the system
+# gitconfig), so a Windows clone checks out LF too. That keeps the working tree in
+# step with what AI tools, sed, python scripts and Linux containers write: a tool that
+# rewrites a file whole can't silently flip its line endings, `git status` doesn't show
+# phantom changes, and `git blame` history survives. Visual Studio, VS Code and Rider
+# all edit LF files natively; .editorconfig tells them to create new files as LF.
+* text=auto eol=lf
+
+# The one exception: cmd.exe mis-parses a batch file that arrives LF-only.
+*.bat          text eol=crlf
+*.cmd          text eol=crlf
+
+# Explicitly binary. Git's heuristic already spares most of these, but under a blanket
+# `text=auto` an explicit marker is worth more than a heuristic.
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.ico    binary
+*.pdf    binary
+*.zip    binary
+*.gz     binary
+*.dll    binary
+*.exe    binary
+*.pfx    binary
+*.snk    binary
+*.woff   binary
+*.woff2  binary

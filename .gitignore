@@ -1,0 +1,19 @@
+bin/
+obj/
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.swp
+TestResults/
+publish/
+
+# Claude Code: per-machine settings and scratch plans stay local; shared settings are committed.
+.claude/settings.local.json
+.claude/plans/
+
+# Local config overrides and secrets — never commit these.
+appsettings.*.local.json
+*.env
+.env

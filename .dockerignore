@@ -1,0 +1,9 @@
+**/bin/
+**/obj/
+**/.vs/
+**/*.user
+.git/
+.claude/
+docs/
+tests/
+src/Scheduler.AppHost/

@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - '*.slnx'
+      - 'global.json'
+      - 'Directory.Build.props'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - '*.slnx'
+      - 'global.json'
+      - 'Directory.Build.props'
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Build
+        run: dotnet build Scheduler.slnx
+
+      - name: Test
+        run: dotnet test Scheduler.slnx --no-build

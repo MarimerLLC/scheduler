@@ -1,0 +1,17 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <VersionPrefix>0.1.0</VersionPrefix>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <Authors>Marimer LLC</Authors>
+    <Company>Marimer LLC</Company>
+    <Copyright>Copyright © Marimer LLC. All rights reserved.</Copyright>
+    <RepositoryUrl>https://github.com/MarimerLLC/scheduler</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+</Project>

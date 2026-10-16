@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.2.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Scheduler.Core\Scheduler.Core.csproj" />
+    <ProjectReference Include="..\Scheduler.Data\Scheduler.Data.csproj" />
+    <ProjectReference Include="..\Scheduler.ServiceDefaults\Scheduler.ServiceDefaults.csproj" />
+  </ItemGroup>
+
+</Project>

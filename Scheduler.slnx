@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Scheduler.AppHost/Scheduler.AppHost.csproj" />
+    <Project Path="src/Scheduler.Core/Scheduler.Core.csproj" />
+    <Project Path="src/Scheduler.Data/Scheduler.Data.csproj" />
+    <Project Path="src/Scheduler.ServiceDefaults/Scheduler.ServiceDefaults.csproj" />
+    <Project Path="src/Scheduler.Web/Scheduler.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Scheduler.Core.Tests/Scheduler.Core.Tests.csproj" />
+  </Folder>
+</Solution>
