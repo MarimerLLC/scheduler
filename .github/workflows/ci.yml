@@ -8,6 +8,7 @@ on:
       - '*.slnx'
       - 'global.json'
       - 'Directory.Build.props'
+      - '.github/workflows/**'
   pull_request:
     paths:
       - 'src/**'
@@ -15,6 +16,7 @@ on:
       - '*.slnx'
       - 'global.json'
       - 'Directory.Build.props'
+      - '.github/workflows/**'
 
 jobs:
   build-and-test:
@@ -23,10 +25,10 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
 
