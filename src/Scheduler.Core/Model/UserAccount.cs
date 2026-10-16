@@ -10,13 +10,6 @@ public sealed class UserAccount
 {
     public Guid Id { get; set; } = Guid.CreateVersion7();
     public string? DisplayName { get; set; }
-
-    /// <summary>
-    /// Allowlisted to create events. Participants never need this; it exists so the server can't be
-    /// used to email arbitrary addresses. See docs/design.md, "Abuse prevention".
-    /// </summary>
-    public bool CanOrganize { get; set; }
-
     public Instant CreatedAt { get; set; }
 
     public List<UserEmail> Emails { get; } = [];

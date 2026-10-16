@@ -80,6 +80,29 @@ namespace Scheduler.Data.Migrations
                     b.ToTable("Suppressions");
                 });
 
+            modelBuilder.Entity("Scheduler.Core.Model.OrganizerGrant", b =>
+                {
+                    b.Property<string>("Pattern")
+                        .HasMaxLength(254)
+                        .HasColumnType("character varying(254)");
+
+                    b.Property<Instant>("GrantedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("GrantedBy")
+                        .IsRequired()
+                        .HasMaxLength(254)
+                        .HasColumnType("character varying(254)");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(280)
+                        .HasColumnType("character varying(280)");
+
+                    b.HasKey("Pattern");
+
+                    b.ToTable("OrganizerGrants");
+                });
+
             modelBuilder.Entity("Scheduler.Core.Model.OutboxEmail", b =>
                 {
                     b.Property<long>("Id")
@@ -320,9 +343,6 @@ namespace Scheduler.Data.Migrations
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
-
-                    b.Property<bool>("CanOrganize")
-                        .HasColumnType("boolean");
 
                     b.Property<Instant>("CreatedAt")
                         .HasColumnType("timestamp with time zone");

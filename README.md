@@ -18,10 +18,12 @@ In place and tested:
 - `SchedulingService`: every operation, with audit entries and queued notification emails
 - EF Core model and the initial migration for PostgreSQL
 - MCP endpoint (`/mcp`) with every tool, both prompts and the server instructions
+- Administration: admins (from configuration) manage who may organize, through admin-only MCP tools or
+  the `/admin/organizers` page
 - Email outbox dispatcher and SMTP sender (Mailpit in development), plain-text notifications
 - Aspire AppHost for local development
 
-Not yet: sign-in (only the Development `X-Dev-Email` header works), the voting and organizer pages, HTML
+Not yet: real sign-in (only the Development header and `/dev/signin` work), the voting and organizer pages, HTML
 email templates and unsubscribe links, and the reminder, deadline and purge jobs. The roadmap is in the
 design doc.
 
@@ -71,9 +73,10 @@ dotnet run --project src/Scheduler.AppHost
 
 The Aspire dashboard links to the web app, pgAdmin and the Mailpit inbox. In Development:
 
-- an MCP client can act as any address without signing in by sending an `X-Dev-Email` header (ignored in
-  every other environment);
-- anyone may organize (`Scheduler:Organizers` is `["*"]` in `appsettings.Development.json`);
+- an MCP client can act as any address without signing in by sending an `X-Dev-Email` header, and the
+  browser can sign in as any address at `/dev/signin` (both ignored in every other environment);
+- anyone may organize (`Scheduler:Organizers` is `["*"]` in `appsettings.Development.json`), and
+  `admin@localhost.test` is an admin, so `/admin/organizers` and the admin MCP tools can be tried;
 - voting links use a random key that changes on every restart unless `Scheduler:MagicLinkKey` is set.
 
 ## Line endings

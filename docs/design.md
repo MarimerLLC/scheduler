@@ -131,7 +131,8 @@ All tables in PostgreSQL via EF Core 10. Times are NodaTime types, mapped native
 | `ProposedSlot` | `Id` | A candidate start: `LocalStart` + `TimeZoneId` (source of truth) and derived `Start` (`Instant`). `Round`, `WithdrawnAt`. |
 | `Participant` | `Id`; unique (`EventId`, `Email`) | An invited address, its role (required/optional), the random nonce its voting-link token is derived from, invited/reminded/responded times, optional note. |
 | `Vote` | (`ParticipantId`, `SlotId`) | One answer. The composite key makes voting an upsert, so retries are safe. Records the channel. |
-| `UserAccount` | `Id` | A signed-in person. `CanOrganize` is the organizer allowlist flag. |
+| `UserAccount` | `Id` | A signed-in person. |
+| `OrganizerGrant` | `Pattern` | An admin's grant to organize: an exact address or `*@domain`, with an optional note and who granted it when. |
 | `UserEmail` | `Email` | A verified address owned by one account. An account can have several. |
 | `AuditEntry` | `Id` (bigint) | Append-only: who did what, when, through which channel. |
 | `OutboxEmail` | `Id` (bigint) | Emails waiting to be sent, written in the same transaction as the change that caused them. |
@@ -300,8 +301,14 @@ happens to be the organizer's.
 
 ### Development
 
-In the Development environment only, an `X-Dev-Email` header acts as that address. The header is ignored
-everywhere else, and `/mcp` requires authorization outside Development.
+In the Development environment only:
+
+- an `X-Dev-Email` header on `/mcp` acts as that address;
+- `/dev/signin` lets the browser sign in as any address (a cookie with that email claim), so the web UI
+  can be built and tried before OIDC exists; `/dev/signout` signs out.
+
+Neither is mapped or honored anywhere else, and `/mcp` requires authorization outside Development (it
+answers 401 rather than redirecting an MCP client to a sign-in page).
 
 ## MCP surface
 
@@ -331,6 +338,10 @@ meant for the caller come back as tool errors with a specific message.
 | `finalize_event` | Organizer | open-world | Picks the slot, emails everyone, returns `localStart`, `timeZone`, `durationMinutes`, `attendeeEmails` for creating the calendar event. Needs `version`. The agent should re-check the organizer's calendar first. |
 | `cancel_event` | Organizer | destructive, open-world | Cancels; emails everyone who was invited, with the optional reason. |
 | `record_calendar_event` | Organizer | idempotent | Stores the iCalendar UID of the meeting the agent created, after finalizing. |
+| `get_my_access` | Anyone signed in | read-only | The caller's verified addresses, and whether they may organize or administer. |
+| `list_organizers` | Admin (hidden from others) | read-only | The organizer allowlist with each entry's source. See [Administration](#administration). |
+| `add_organizer` | Admin (hidden from others) | idempotent | Grants an address or `*@domain`. |
+| `remove_organizer` | Admin (hidden from others) | destructive | Removes a grant; existing events are unaffected. |
 
 ### Prompts
 
@@ -379,6 +390,7 @@ Blazor with per-page render modes.
 | `/events/new` | InteractiveServer | Compose an event by hand (creates a Draft, then Open). |
 | `/events/{id}` | InteractiveServer | One event: slots, votes by participant, finalize / propose more / withdraw / cancel. |
 | `/account` | InteractiveServer | Verified addresses, personal access tokens. |
+| `/admin/organizers` | InteractiveServer | Admins: manage the organizer allowlist. See [Administration](#administration). |
 | `/unsubscribe` | Static | Confirm page (GET) and RFC 8058 one-click endpoint (POST). |
 
 InteractiveServer notes: use `IDbContextFactory`, never a circuit-lived `DbContext`; get identity from
@@ -440,16 +452,62 @@ Hosted services in the web process (single replica in v1):
 | Retention purge | Daily | Deletes events closed more than N days ago (default 30), with their slots, participants, votes, audit and outbox rows; deletes drafts untouched for 7 days |
 | tzdb check | On startup | If the tzdb version changed, recompute `Start` for future slots of open events |
 
+## Administration
+
+Admins decide who may organize. Everything else (who is invited, who votes) stays with organizers.
+
+### Admins
+
+Admins are exact addresses in `Scheduler:Admins`, and nowhere else. Admin rights can't be granted, or all
+removed, from inside the app, so the server can't lose its last admin and a compromised admin session
+can't create more admins. A voting-link caller is never an admin, even with an admin's address. Being an
+admin doesn't by itself make someone an organizer.
+
+### The organizer allowlist
+
+Two sources, combined:
+
+| Source | Holds | Changed by |
+|---|---|---|
+| `Scheduler:Organizers` (configuration) | Addresses, `*@domain`, or `*` (anyone; Development only) | Editing configuration and redeploying |
+| `OrganizerGrant` rows | Addresses or `*@domain` | Admins, through MCP or the web UI |
+
+A caller may organize if any of their verified addresses, or its domain, matches either source.
+
+- **Adding** normalizes the entry (`Bob@Example.com` becomes `bob@example.com`, `@Marimer.LLC` becomes
+  `*@marimer.llc`). A bare `*` can't be granted: letting anyone organize is a configuration decision.
+  Adding an entry that already exists returns the original grant unchanged, so retries are safe.
+- **Removing** a grant stops new events only. Events the person already organizes stay theirs: they can
+  still finalize, reschedule or cancel them. Configured entries can't be removed in the app; the refusal
+  says to change `Scheduler:Organizers`.
+- Every add and remove is audited (`organizer.added`, `organizer.removed`) with no event ID.
+
+### Through an agent
+
+Three MCP tools, `list_organizers`, `add_organizer` and `remove_organizer`, **listed only to admins**. A
+`tools/list` filter removes them for everyone else. The list then differs per caller, so it is returned with
+`cacheScope: private` (a shared gateway must not serve one user's list to another). Calling an admin tool
+without being an admin is still refused by `IAdminService`: hiding is a convenience, not the check.
+
+Everyone also gets `get_my_access`, which reports the caller's verified addresses and whether they may
+organize or administer, so an agent can explain a refusal before it happens.
+
+### Through the web UI
+
+`/admin/organizers` (InteractiveServer): the combined list with each entry's source, note and who added it
+when; a form to add an address or domain; and remove, with a confirm step, on granted entries. Configured
+entries show no remove button. Signed-out visitors are asked to sign in; signed-in non-admins are told the
+page is for admins.
+
 ## Security
 
 ### Abuse prevention
 
 The server sends email to addresses it is given, so an open `create_event` would be a spam relay.
 
-- Only allowlisted organizers can create events. The allowlist is configuration, `Scheduler:Organizers`:
-  exact addresses, whole domains (`*@marimer.llc`), or `*` for anyone (Development only). An account's
-  `CanOrganize` flag also grants it, for one-off grants. An allowlisted caller's first `create_event`
-  provisions a `UserAccount` owning their verified addresses that no other account has claimed.
+- Only allowlisted organizers can create events: a configured entry (`Scheduler:Organizers`) or an admin's
+  grant (see [Administration](#administration)). An allowlisted caller's first `create_event` provisions a
+  `UserAccount` owning their verified addresses that no other account has claimed.
 - Rate limits per organizer (events per day, invitations per day) and on `/mcp` and the voting endpoints
   (ASP.NET Core rate limiting).
 - Participants never need an account to vote.
@@ -485,7 +543,7 @@ which has that person's mail and calendar tools.
 `AuditEntry` rows record actions such as `event.created`, `vote.cast`, `slot.withdrawn`,
 `event.finalized`, `email.bounced`, with the actor's address (or none, for the system) and the channel
 (`mcp`, `web`, `email`, `system`). Useful for "why was this finalized?" and for debugging agent behavior.
-Purged with the event.
+Purged with the event. Admin actions (`organizer.added`, `organizer.removed`) have no event and are kept.
 
 ## Technology
 

@@ -6,11 +6,17 @@ public sealed class SchedulingOptions
     public const string SectionName = "Scheduler";
 
     /// <summary>
-    /// Who may create events: exact addresses (<c>rocky@lhotka.net</c>), whole domains (<c>*@marimer.llc</c>),
-    /// or <c>*</c> for anyone (development only). An account's <c>CanOrganize</c> flag also grants it.
-    /// See docs/design.md, "Abuse prevention".
+    /// Fixed organizer entries: exact addresses (<c>rocky@lhotka.net</c>), whole domains (<c>*@marimer.llc</c>),
+    /// or <c>*</c> for anyone (development only). Admins add and remove further entries at runtime; these
+    /// can only be changed here. See docs/design.md, "Administration".
     /// </summary>
     public List<string> Organizers { get; set; } = [];
+
+    /// <summary>
+    /// Admin addresses (exact addresses only). Admins manage the runtime organizer list. Admin rights exist
+    /// only here, so they can't be granted, or all removed, from inside the app.
+    /// </summary>
+    public List<string> Admins { get; set; } = [];
 
     /// <summary>Public base URL of the web app, for links in emails.</summary>
     public string PublicBaseUrl { get; set; } = "https://localhost:7140";
@@ -18,6 +24,7 @@ public sealed class SchedulingOptions
     /// <summary>Base64 HMAC key for voting links, at least 32 bytes. Rotating it invalidates every link.</summary>
     public string? MagicLinkKey { get; set; }
 
+    /// <summary>Whether a configured entry lets <paramref name="email"/> organize.</summary>
     public bool IsAllowlistedOrganizer(string email)
     {
         foreach (var entry in Organizers)
@@ -32,4 +39,9 @@ public sealed class SchedulingOptions
         }
         return false;
     }
+
+    /// <summary>Whether <paramref name="caller"/> is an admin: signed in (not by voting link) with a configured address.</summary>
+    public bool IsAdmin(CallerIdentity caller) =>
+        caller.MagicLinkEventId is null
+        && caller.VerifiedEmails.Any(email => Admins.Any(admin => string.Equals(admin.Trim(), email, StringComparison.OrdinalIgnoreCase)));
 }

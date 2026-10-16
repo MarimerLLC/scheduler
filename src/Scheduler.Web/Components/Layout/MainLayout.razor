@@ -1,6 +1,36 @@
 @inherits LayoutComponentBase
+@using Microsoft.AspNetCore.Components.Authorization
+@using Scheduler.Web.Identity
+@inject IWebHostEnvironment Environment
 
-@Body
+<header class="site-header">
+    <a class="brand" href="/">Scheduler</a>
+    <nav>
+        <a href="/events">My events</a>
+        <a href="/admin/organizers">Organizers</a>
+    </nav>
+    <span class="account">
+        <AuthorizeView>
+            <Authorized>
+                @context.User.Identity?.Name
+                @if (Environment.IsDevelopment())
+                {
+                    <a href="@DevSignIn.SignOutPath" data-enhance-nav="false">Sign out</a>
+                }
+            </Authorized>
+            <NotAuthorized>
+                @if (Environment.IsDevelopment())
+                {
+                    <a href="@DevSignIn.SignInPath" data-enhance-nav="false">Sign in</a>
+                }
+            </NotAuthorized>
+        </AuthorizeView>
+    </span>
+</header>
+
+<main>
+    @Body
+</main>
 
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.
