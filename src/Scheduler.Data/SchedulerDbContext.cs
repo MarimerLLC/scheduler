@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Scheduler.Core;
 using Scheduler.Core.Model;
+using Scheduler.Core.Security;
 
 namespace Scheduler.Data;
 
@@ -23,13 +24,19 @@ public sealed class SchedulerDbContext(DbContextOptions<SchedulerDbContext> opti
 
     protected override void OnModelCreating(ModelBuilder model)
     {
+        // Every GUID key is assigned in code (version 7). Telling EF so makes a new child added to a loaded
+        // event (a slot, a participant) an insert; otherwise a key that is already set reads as an existing row.
         model.Entity<SchedulingEvent>(e =>
         {
             e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Ignore(x => x.ActiveSlots);
             e.HasIndex(x => x.ShortCode).IsUnique();
             e.Property(x => x.ShortCode).HasMaxLength(16);
             e.Property(x => x.Title).HasMaxLength(FieldLimits.TitleMax);
             e.Property(x => x.Description).HasMaxLength(FieldLimits.DescriptionMax);
+            e.Property(x => x.OrganizerEmail).HasMaxLength(FieldLimits.EmailMax);
+            e.Property(x => x.OrganizerName).HasMaxLength(FieldLimits.DisplayNameMax);
             e.Property(x => x.OrganizerTimeZone).HasMaxLength(FieldLimits.TimeZoneIdMax);
             e.Property(x => x.State).HasConversion<string>().HasMaxLength(16);
             e.Property(x => x.CalendarEventUid).HasMaxLength(512);
@@ -45,6 +52,7 @@ public sealed class SchedulerDbContext(DbContextOptions<SchedulerDbContext> opti
         model.Entity<ProposedSlot>(e =>
         {
             e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
             e.Property(x => x.TimeZoneId).HasMaxLength(FieldLimits.TimeZoneIdMax);
             e.HasIndex(x => new { x.EventId, x.Start });
         });
@@ -52,10 +60,12 @@ public sealed class SchedulerDbContext(DbContextOptions<SchedulerDbContext> opti
         model.Entity<Participant>(e =>
         {
             e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
             e.Property(x => x.Email).HasMaxLength(FieldLimits.EmailMax);
             e.Property(x => x.DisplayName).HasMaxLength(FieldLimits.DisplayNameMax);
             e.Property(x => x.Note).HasMaxLength(FieldLimits.NoteMax);
             e.Property(x => x.Role).HasConversion<string>().HasMaxLength(16);
+            e.Property(x => x.TokenNonce).HasMaxLength(MagicLinks.NonceBytes);
             e.HasIndex(x => new { x.EventId, x.Email }).IsUnique();
             e.HasIndex(x => x.Email);
             e.HasMany(x => x.Votes).WithOne().HasForeignKey(v => v.ParticipantId).OnDelete(DeleteBehavior.Cascade);
@@ -72,6 +82,7 @@ public sealed class SchedulerDbContext(DbContextOptions<SchedulerDbContext> opti
         model.Entity<UserAccount>(e =>
         {
             e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
             e.Property(x => x.DisplayName).HasMaxLength(FieldLimits.DisplayNameMax);
             e.HasMany(x => x.Emails).WithOne().HasForeignKey(m => m.UserId).OnDelete(DeleteBehavior.Cascade);
         });

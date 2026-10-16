@@ -7,8 +7,10 @@ it when a decision changes.
 ## Build and test
 
 - `dotnet build Scheduler.slnx`
-- `dotnet test Scheduler.slnx`
+- `dotnet test Scheduler.slnx` (`Scheduler.Data.Tests` needs Docker for its PostgreSQL container)
 - Local run (needs Docker): `dotnet run --project src/Scheduler.AppHost`
+- New migration: `dotnet tool restore`, then
+  `dotnet ef migrations add <Name> --project src/Scheduler.Data --startup-project src/Scheduler.Data --output-dir Migrations`
 
 ## Conventions
 
@@ -19,8 +21,12 @@ it when a decision changes.
 - User-supplied text has hard limits in `FieldLimits`; it is read by other people's agents (prompt injection).
 - Errors meant for the caller are `SchedulingException` subclasses; tools surface their messages verbatim.
 - Every state change writes an `AuditEntry` and its `OutboxEmail` rows in the same `SaveChanges`.
+- Organizer edits take the event `Version` and call `Touch` so the event row is always rewritten (that is
+  what moves `xmin`). Votes never touch the event row.
+- GUID keys are assigned in code; keep `ValueGeneratedNever()` on them or new child rows save as updates.
 - Use `IDbContextFactory<SchedulerDbContext>`, never an injected `DbContext` (Blazor Server circuits are long-lived).
-- Tests: MSTest. Domain rules get unit tests in `tests/Scheduler.Core.Tests`.
+- Tests: MSTest. Domain rules get unit tests in `tests/Scheduler.Core.Tests`; service behavior gets
+  integration tests in `tests/Scheduler.Data.Tests` (real PostgreSQL, `Harness` sets up the cast and clock).
 
 ## Environment notes
 

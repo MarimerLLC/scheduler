@@ -24,12 +24,22 @@ public sealed class SchedulingEvent
 
     public Guid OrganizerId { get; set; }
 
+    /// <summary>The address the organizer created the event from: shown to participants, used as Reply-To.</summary>
+    public required string OrganizerEmail { get; set; }
+    public string? OrganizerName { get; set; }
+
     /// <summary>The organizer's IANA zone, used to show slots the way the organizer meant them.</summary>
     public required string OrganizerTimeZone { get; set; }
 
     public EventState State { get; private set; } = EventState.Draft;
     public Instant? RespondBy { get; set; }
     public Instant CreatedAt { get; set; }
+
+    /// <summary>
+    /// Last organizer-side change. Every such change updates this row, which moves <see cref="Version"/>,
+    /// so stale organizer edits are rejected. Votes don't touch it: they are the voter's own rows.
+    /// </summary>
+    public Instant UpdatedAt { get; set; }
 
     /// <summary>When the event left the voting states (finalized, cancelled, expired). Drives retention.</summary>
     public Instant? ClosedAt { get; private set; }

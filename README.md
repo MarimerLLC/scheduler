@@ -12,17 +12,18 @@ See [docs/design.md](docs/design.md) for the full design.
 
 ## Status
 
-Scaffold. In place and tested:
+In place and tested:
 
-- Domain model, state machine, slot ranking, time-zone handling (NodaTime), tokens
-- EF Core model for PostgreSQL
+- Domain model, state machine, slot ranking, time-zone handling (NodaTime), voting-link tokens
+- `SchedulingService`: every operation, with audit entries and queued notification emails
+- EF Core model and the initial migration for PostgreSQL
 - MCP endpoint (`/mcp`) with every tool, both prompts and the server instructions
-- Email outbox dispatcher and SMTP sender (Mailpit in development)
+- Email outbox dispatcher and SMTP sender (Mailpit in development), plain-text notifications
 - Aspire AppHost for local development
 
-Not yet: the `SchedulingService` methods (they throw `NotImplementedException`), the first EF migration,
-sign-in, the voting and organizer pages, email templates, and the background jobs. The roadmap is in
-the design doc.
+Not yet: sign-in (only the Development `X-Dev-Email` header works), the voting and organizer pages, HTML
+email templates and unsubscribe links, and the reminder, deadline and purge jobs. The roadmap is in the
+design doc.
 
 ## Layout
 
@@ -34,6 +35,7 @@ the design doc.
 | `src/Scheduler.ServiceDefaults` | Aspire defaults: OpenTelemetry, health checks, resilience |
 | `src/Scheduler.AppHost` | Aspire AppHost for local development (PostgreSQL + Mailpit) |
 | `tests/Scheduler.Core.Tests` | MSTest unit tests for the domain rules |
+| `tests/Scheduler.Data.Tests` | Integration tests for `SchedulingService` against PostgreSQL (Testcontainers) |
 | `docs/design.md` | Design document |
 
 ## Build and test
@@ -45,6 +47,20 @@ dotnet build Scheduler.slnx
 dotnet test Scheduler.slnx
 ```
 
+`Scheduler.Data.Tests` needs Docker: it starts a PostgreSQL container and gives each test its own freshly
+migrated database.
+
+## Migrations
+
+`dotnet-ef` is pinned in the repo's tool manifest.
+
+```sh
+dotnet tool restore
+dotnet ef migrations add <Name> --project src/Scheduler.Data --startup-project src/Scheduler.Data --output-dir Migrations
+```
+
+In Development the web app applies migrations at startup.
+
 ## Run locally
 
 Requires Docker (Aspire starts PostgreSQL and Mailpit containers).
@@ -53,9 +69,12 @@ Requires Docker (Aspire starts PostgreSQL and Mailpit containers).
 dotnet run --project src/Scheduler.AppHost
 ```
 
-The Aspire dashboard links to the web app, pgAdmin and the Mailpit inbox. In Development, an MCP client
-can act as any address without signing in by sending an `X-Dev-Email` header; that header is ignored in
-every other environment.
+The Aspire dashboard links to the web app, pgAdmin and the Mailpit inbox. In Development:
+
+- an MCP client can act as any address without signing in by sending an `X-Dev-Email` header (ignored in
+  every other environment);
+- anyone may organize (`Scheduler:Organizers` is `["*"]` in `appsettings.Development.json`);
+- voting links use a random key that changes on every restart unless `Scheduler:MagicLinkKey` is set.
 
 ## Line endings
 

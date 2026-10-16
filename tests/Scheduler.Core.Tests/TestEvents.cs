@@ -13,6 +13,7 @@ internal static class TestEvents
         {
             ShortCode = Tokens.NewShortCode(),
             Title = "Planning",
+            OrganizerEmail = "rocky@example.com",
             OrganizerTimeZone = "America/Chicago",
             Duration = Duration.FromMinutes(30),
         };
@@ -38,7 +39,7 @@ internal static class TestEvents
             EventId = ev.Id,
             Email = email,
             Role = role,
-            TokenHash = Tokens.Hash(Tokens.NewMagicToken()),
+            TokenNonce = MagicLinks.NewNonce(),
         };
         ev.Participants.Add(participant);
         return participant;

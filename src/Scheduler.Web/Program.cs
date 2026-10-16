@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Options;
 using Scheduler.Core.Email;
-using Scheduler.Data;
+using Scheduler.Web;
 using Scheduler.Web.Components;
 using Scheduler.Web.Email;
 using Scheduler.Web.Mcp;
@@ -9,9 +9,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
 
-var connectionString = builder.Configuration.GetConnectionString("schedulerdb")
-    ?? throw new InvalidOperationException("Connection string 'schedulerdb' is not configured.");
-builder.Services.AddSchedulerData(connectionString);
+builder.AddScheduler();
 
 // Email: SMTP when an endpoint is configured (Mailpit under Aspire), otherwise log-only.
 builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection(EmailOptions.SectionName));
@@ -41,6 +39,8 @@ builder.Services
 
 var app = builder.Build();
 
+await app.MigrateDevelopmentDatabaseAsync();
+
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
@@ -63,4 +63,4 @@ if (!app.Environment.IsDevelopment())
 
 app.MapDefaultEndpoints();
 
-app.Run();
+await app.RunAsync();

@@ -6,10 +6,18 @@ namespace Scheduler.Core.Services;
 /// Who is calling. Passed explicitly to every service method rather than read from ambient state,
 /// because the MCP endpoint (an HTTP request) and Blazor (a long-lived circuit) learn identity differently.
 /// </summary>
-/// <param name="UserId">The signed-in account, or null for a magic-link voter.</param>
+/// <param name="UserId">The signed-in account, if the identity layer resolved one.</param>
 /// <param name="VerifiedEmails">Normalized addresses the caller has proven they own.</param>
 /// <param name="Channel">How the request arrived.</param>
-public sealed record CallerIdentity(Guid? UserId, IReadOnlyList<string> VerifiedEmails, Channel Channel);
+/// <param name="MagicLinkEventId">
+/// Set when the caller arrived by a voting link instead of signing in. Such a caller is a participant of
+/// that one event and nothing else: never an organizer, never resolved to an account.
+/// </param>
+public sealed record CallerIdentity(
+    Guid? UserId,
+    IReadOnlyList<string> VerifiedEmails,
+    Channel Channel,
+    Guid? MagicLinkEventId = null);
 
 /// <summary>A candidate start: local wall time (e.g. <c>2026-11-03T10:00</c>) plus an IANA zone.</summary>
 public sealed record SlotInput(string Start, string TimeZone);
@@ -23,7 +31,8 @@ public sealed record CreateEventRequest(
     string OrganizerTimeZone,
     IReadOnlyList<ParticipantInput> Participants,
     IReadOnlyList<SlotInput> Slots,
-    string? RespondBy);
+    string? RespondBy,
+    string? OrganizerName = null);
 
 public sealed record VoteInput(Guid SlotId, VoteValue Value);
 
@@ -56,15 +65,21 @@ public sealed record SlotView(
     string? ViewerLocal,
     SlotTally Tally,
     VoteValue? MyVote,
-    int? Rank);
+    // Organizer only: position in the ranked recommendation (1 = best) and whether no required person said no.
+    int? Rank,
+    bool? Viable);
 
+/// <summary>
+/// A participant as the caller may see them. Participants see each other's names and addresses (as with a
+/// normal invite) but not each other's votes, response status or notes; those fields are null for them.
+/// </summary>
 public sealed record ParticipantView(
     string Email,
     string? DisplayName,
     AttendeeRole Role,
-    bool Responded,
+    bool? Responded,
     string? Note,
-    IReadOnlyDictionary<Guid, VoteValue> Votes);
+    IReadOnlyDictionary<Guid, VoteValue>? Votes);
 
 public sealed record EventView(
     Guid Id,
@@ -73,13 +88,17 @@ public sealed record EventView(
     string? Description,
     int DurationMinutes,
     EventState State,
+    string OrganizerEmail,
+    string? OrganizerName,
     string OrganizerTimeZone,
     string? RespondBy,
     Guid? FinalizedSlotId,
     uint Version,
+    bool IsOrganizer,
     IReadOnlyList<SlotView> Slots,
-    // Null unless the caller is the organizer: participants see only per-slot totals.
-    IReadOnlyList<ParticipantView>? Participants);
+    IReadOnlyList<ParticipantView> Participants,
+    // Things the caller should know about how the request was applied, e.g. a dropped duplicate address.
+    IReadOnlyList<string>? Notices = null);
 
 /// <summary>
 /// What the organizer's agent needs to create the real meeting in the organizer's own calendar.
