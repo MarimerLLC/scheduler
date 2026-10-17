@@ -96,19 +96,20 @@ internal sealed partial class SchedulerApp(params (string Key, string Value)[] s
         }
 
         /// <summary>
-        /// Submits the form on a static page (the hidden fields Blazor renders: antiforgery token and handler
-        /// name) back to the page's URL, as pressing its button does.
+        /// Submits the form on a static page back to the page's URL, as pressing its button does: the hidden
+        /// fields Blazor renders (antiforgery token, handler name) plus <paramref name="fields"/>. A page with
+        /// several forms gets the first one's handler.
         /// </summary>
-        public async Task<HttpResponseMessage> SubmitFormAsync(string url)
+        public async Task<HttpResponseMessage> SubmitFormAsync(string url, params (string Name, string Value)[] fields)
         {
             var page = await Http.GetAsync(url);
             var html = await page.Content.ReadAsStringAsync();
             Assert.AreEqual(HttpStatusCode.OK, page.StatusCode, html);
-            var fields = HiddenInput().Matches(html)
+            var hidden = HiddenInput().Matches(html)
                 .Select(m => new KeyValuePair<string, string>(WebUtility.HtmlDecode(m.Groups[1].Value), WebUtility.HtmlDecode(m.Groups[2].Value)))
                 .ToList();
-            Assert.IsTrue(fields.Any(f => f.Key == "_handler"), $"expected a form on {url}: {html}");
-            return await Http.PostAsync(url, new FormUrlEncodedContent(fields));
+            Assert.IsTrue(hidden.Any(f => f.Key == "_handler"), $"expected a form on {url}: {html}");
+            return await Http.PostAsync(url, new FormUrlEncodedContent(hidden.Concat(fields.Select(f => new KeyValuePair<string, string>(f.Name, f.Value)))));
         }
 
         /// <summary>The last consent page shown, for checking what the person was told.</summary>

@@ -11,6 +11,12 @@ public interface ISchedulingService
     /// <summary>Creates and opens an event, and queues invitation emails. Caller must be an allowlisted organizer.</summary>
     Task<EventView> CreateEventAsync(CallerIdentity caller, CreateEventRequest request, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// The caller a voting link stands for: that participant, for that event only
+    /// (<see cref="CallerIdentity.MagicLinkEventId"/>). Null if the token isn't a current link for the event.
+    /// </summary>
+    Task<CallerIdentity?> ResolveVotingLinkAsync(string eventRef, string token, CancellationToken cancellationToken);
+
     Task<IReadOnlyList<EventSummary>> ListMyEventsAsync(CallerIdentity caller, EventListFilter filter, CancellationToken cancellationToken);
 
     /// <param name="viewerTimeZone">IANA zone to add a viewer-local time to each slot, if given.</param>

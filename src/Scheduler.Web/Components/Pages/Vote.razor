@@ -1,19 +1,238 @@
 @page "/e/{Code}"
 @using Microsoft.AspNetCore.RateLimiting
+@using Scheduler.Core
+@using Scheduler.Core.Model
+@using Scheduler.Core.Services
+@using Scheduler.Web.Identity
 @attribute [EnableRateLimiting(RateLimits.Pages)]
+@inject ISchedulingService Scheduling
+@inject NavigationManager Navigation
 
 @* Static server rendering on purpose: people open this from an email link, often on a phone. Plain
-   form posts need no long-lived connection and survive a flaky network. Rate limited per client IP. See docs/design.md, "Web UI". *@
+   form posts need no long-lived connection and survive a flaky network, and the page works without
+   JavaScript (a small script only adds each time in the viewer's own zone). Rate limited per client IP.
 
-<PageTitle>Vote</PageTitle>
+   The link's token is moved into a cookie scoped to this event's path, and the browser is sent to the URL
+   without it, so the token doesn't linger in history or leak in a Referer. Opening the link changes nothing;
+   only the form does, so mail scanners that fetch links can't vote. A signed-in participant can vote here
+   without the link. See docs/design.md, "Magic links" and "Web UI". *@
 
-<h1>Vote on meeting times</h1>
+<PageTitle>@(_event?.Title ?? "Vote")</PageTitle>
 
-<p>Event <code>@Code</code>. The voting page isn't implemented yet.</p>
+@if (_problem is not null)
+{
+    <h1>Vote on meeting times</h1>
+    <p>@_problem</p>
+}
+else if (_event is not null)
+{
+    <h1>@_event.Title</h1>
+    <p class="hint">
+        @_event.DurationMinutes minutes, organized by @(_event.OrganizerName ?? _event.OrganizerEmail).
+        Event <code>@_event.ShortCode</code>.
+    </p>
+
+    @if (!string.IsNullOrWhiteSpace(_event.Description))
+    {
+        <p class="hint">Details from the organizer:</p>
+        <blockquote class="organizer-text">@_event.Description</blockquote>
+    }
+
+    @if (_saved)
+    {
+        <p class="message" role="status">Thanks, your answers are saved. You can change them here until the organizer picks a time.</p>
+    }
+    @if (_error is not null)
+    {
+        <p class="message error" role="alert">@_error</p>
+    }
+
+    @switch (_event.State)
+    {
+        case EventState.Finalized:
+            <p class="message">
+                @(_event.OrganizerName ?? _event.OrganizerEmail) picked
+                <strong>@(_event.Slots.FirstOrDefault(s => s.SlotId == _event.FinalizedSlotId)?.OrganizerLocal ?? "a time")</strong>.
+                A calendar invitation comes from the organizer's calendar.
+            </p>
+            break;
+        case EventState.Cancelled:
+            <p class="message">This meeting was cancelled.</p>
+            break;
+        case EventState.Expired:
+            <p class="message">Voting on this meeting has closed.</p>
+            break;
+        case EventState.Draft:
+            <p class="message">This meeting isn't open for votes yet.</p>
+            break;
+    }
+
+    @if (_event.IsOrganizer)
+    {
+        <p class="message">You're the organizer, so you don't vote. The totals so far are below.</p>
+    }
+
+    @if (CanVote)
+    {
+        @if (_event.RespondBy is not null)
+        {
+            <p>Please answer by <strong>@_event.RespondBy</strong>.</p>
+        }
+        <p class="hint">Answer the times you can; you don't have to answer them all. You can come back and change your answers.</p>
+
+        <form method="post" @formname="vote" @onsubmit="VoteAsync" class="vote-form">
+            <AntiforgeryToken />
+            @foreach (var slot in _event.Slots)
+            {
+                <fieldset class="slot">
+                    <legend>
+                        <strong>@slot.OrganizerLocal</strong>
+                        <time datetime="@slot.StartUtc" data-viewer-local data-zone="@_event.OrganizerTimeZone" hidden></time>
+                    </legend>
+                    <div class="choices">
+                        @foreach (var (value, label) in Choices)
+                        {
+                            <label>
+                                <input type="radio" name="@SlotField(slot.SlotId)" value="@value" checked="@(slot.MyVote == ToVote(value))" />
+                                @label
+                            </label>
+                        }
+                    </div>
+                    <p class="hint tally">@Tally(slot.Tally)</p>
+                </fieldset>
+            }
+
+            <label class="note">
+                <span>Note to the organizer (optional, only they see it)</span>
+                <textarea name="note" maxlength="@FieldLimits.NoteMax" rows="3">@MyNote</textarea>
+            </label>
+
+            <button type="submit">Save my answers</button>
+        </form>
+    }
+    else
+    {
+        <ul class="slot-totals">
+            @foreach (var slot in _event.Slots)
+            {
+                <li>
+                    <strong>@slot.OrganizerLocal</strong>
+                    <time datetime="@slot.StartUtc" data-viewer-local data-zone="@_event.OrganizerTimeZone" hidden></time>
+                    <span class="hint">@Tally(slot.Tally)</span>
+                </li>
+            }
+        </ul>
+    }
+}
 
 @code {
+    /// <summary>The cookie holding a voting link's token, scoped to one event's path.</summary>
+    public const string CookieName = "scheduler.vote";
+
+    private static readonly TimeSpan CookieLifetime = TimeSpan.FromHours(12);
+
+    private static readonly (string Value, string Label)[] Choices =
+        [("preferred", "Works"), ("if_necessary", "If necessary"), ("no", "Can't")];
+
+    [CascadingParameter] public HttpContext HttpContext { get; set; } = default!;
+
     [Parameter] public string Code { get; set; } = "";
 
     /// <summary>The participant's magic-link token, from the invitation email.</summary>
     [SupplyParameterFromQuery(Name = "t")] public string? Token { get; set; }
+
+    private CallerIdentity? _caller;
+    private EventView? _event;
+    private string? _problem;
+    private string? _error;
+    private bool _saved;
+
+    private string EventPath => "/e/" + Uri.EscapeDataString(Code);
+
+    private bool CanVote => _event is { State: EventState.Open, IsOrganizer: false };
+
+    private string? MyNote => _event?.Participants.FirstOrDefault(p => p.Votes is not null && p.Note is not null)?.Note;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!string.IsNullOrEmpty(Token))
+        {
+            if (await Scheduling.ResolveVotingLinkAsync(Code, Token, CancellationToken.None) is null)
+            {
+                _problem = "This voting link isn't valid any more. Use the link in the most recent email about this meeting.";
+                return;
+            }
+            HttpContext.Response.Cookies.Append(CookieName, Token, new CookieOptions
+            {
+                Path = EventPath,
+                HttpOnly = true,
+                Secure = HttpContext.Request.IsHttps,
+                SameSite = SameSiteMode.Lax,
+                MaxAge = CookieLifetime,
+            });
+            Navigation.NavigateTo(EventPath);
+            return;
+        }
+
+        _caller = HttpContext.Request.Cookies[CookieName] is { Length: > 0 } cookie
+            ? await Scheduling.ResolveVotingLinkAsync(Code, cookie, CancellationToken.None)
+            : null;
+        _caller ??= CallerResolver.FromPrincipal(HttpContext.User, Channel.Web);
+        if (_caller is null)
+        {
+            _problem = "Open this page from the link in your invitation email, or sign in with the address it was sent to.";
+            return;
+        }
+
+        try
+        {
+            _event = await Scheduling.GetEventAsync(_caller, Code, viewerTimeZone: null, CancellationToken.None);
+        }
+        catch (SchedulingAccessException)
+        {
+            _problem = "There's no meeting here for you. Open the link from your invitation email, or sign in with the address it was sent to.";
+        }
+    }
+
+    private async Task VoteAsync()
+    {
+        if (_caller is null || _event is null || !CanVote)
+            return;
+
+        var form = HttpContext.Request.Form;
+        var votes = new List<VoteInput>();
+        foreach (var slot in _event.Slots)
+        {
+            if (ToVote(form[SlotField(slot.SlotId)].ToString()) is { } value)
+                votes.Add(new VoteInput(slot.SlotId, value));
+        }
+        if (votes.Count == 0)
+        {
+            _error = "Choose an answer for at least one time.";
+            return;
+        }
+
+        try
+        {
+            _event = await Scheduling.VoteAsync(_caller, Code, votes, form["note"].ToString(), CancellationToken.None);
+            _saved = true;
+        }
+        catch (SchedulingException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private static string SlotField(Guid slotId) => "slot-" + slotId.ToString("N");
+
+    private static VoteValue? ToVote(string? value) => value switch
+    {
+        "preferred" => VoteValue.Preferred,
+        "if_necessary" => VoteValue.IfNecessary,
+        "no" => VoteValue.No,
+        _ => null,
+    };
+
+    private static string Tally(SlotTally tally) =>
+        $"So far: {tally.Preferred} works, {tally.IfNecessary} if necessary, {tally.No} can't, {tally.Pending} not answered.";
 }

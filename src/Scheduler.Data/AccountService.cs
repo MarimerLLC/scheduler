@@ -60,7 +60,7 @@ public sealed class AccountService(
             throw new SchedulingValidationException("You've asked for a lot of confirmation links. Try again in an hour.");
 
         await QueueLinkAsync(db, address, EmailVerificationPurpose.AddAddress, now, cancellationToken,
-            link => composer.AddressVerification(address, link, caller.VerifiedEmails[0]),
+            link => composer.AddressVerificationAsync(address, link, caller.VerifiedEmails[0]),
             verification => verification.UserId = account.Id);
         Audit(db, caller, "address.requested", new { email = address }, now);
         await db.SaveChangesAsync(cancellationToken);
@@ -141,7 +141,7 @@ public sealed class AccountService(
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
         var now = clock.GetCurrentInstant();
         await QueueLinkAsync(db, address, EmailVerificationPurpose.SignIn, now, cancellationToken,
-            link => composer.SignInLink(address, link),
+            link => composer.SignInLinkAsync(address, link),
             verification =>
             {
                 verification.DisplayName = name;
@@ -185,7 +185,7 @@ public sealed class AccountService(
         EmailVerificationPurpose purpose,
         Instant now,
         CancellationToken cancellationToken,
-        Func<string, ComposedEmail> compose,
+        Func<string, Task<ComposedEmail>> compose,
         Action<EmailVerification> describe)
     {
         if (await db.Suppressions.AnyAsync(s => s.Email == address, cancellationToken))
@@ -209,7 +209,7 @@ public sealed class AccountService(
         describe(verification);
         db.EmailVerifications.Add(verification);
 
-        var email = compose(VerificationLinks.Url(options.Value.PublicBaseUrl, token));
+        var email = await compose(VerificationLinks.Url(options.Value.PublicBaseUrl, token));
         db.Outbox.Add(new OutboxEmail
         {
             To = address,

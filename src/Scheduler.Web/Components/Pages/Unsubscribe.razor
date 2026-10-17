@@ -1,0 +1,85 @@
+@page "/unsubscribe"
+@using Microsoft.AspNetCore.RateLimiting
+@using Scheduler.Core
+@using Scheduler.Core.Services
+@using Scheduler.Web.Email
+@attribute [EnableRateLimiting(RateLimits.Pages)]
+@inject UnsubscribeLinks Links
+@inject ISubscriptionService Subscriptions
+
+@* Static, with plain form posts: opened from the footer of an email. Opening it asks first, because mail
+   scanners fetch links; mail clients' one-click unsubscribe uses UnsubscribeEndpoints instead. An unsubscribe
+   can be undone here. See docs/design.md, "Email". *@
+
+<PageTitle>Unsubscribe</PageTitle>
+
+<h1>Email from the scheduling server</h1>
+
+@if (_email is null)
+{
+    <p>This unsubscribe link isn't valid. Use the link from the bottom of the latest email you got from this server.</p>
+}
+else if (_suppressed)
+{
+    <p role="status"><strong>@_email</strong> won't get any more email from this server.</p>
+    <p class="hint">
+        Meeting invitations sent to this address won't reach you. If you have an account here, you can still see
+        and answer them when you sign in.
+    </p>
+    @Error()
+    <form method="post" @formname="resubscribe" @onsubmit="ResubscribeAsync">
+        <AntiforgeryToken />
+        <button type="submit">Undo: email me again</button>
+    </form>
+}
+else
+{
+    <p>Stop all email from this scheduling server to <strong>@_email</strong>?</p>
+    <p class="hint">That includes meeting invitations people send you through it, and their updates.</p>
+    @Error()
+    <form method="post" @formname="unsubscribe" @onsubmit="UnsubscribeAsync">
+        <AntiforgeryToken />
+        <button type="submit" class="danger">Unsubscribe</button>
+    </form>
+}
+
+@code {
+    /// <summary>The protected address, from the email. The forms post back to this URL.</summary>
+    [SupplyParameterFromQuery(Name = "t")] public string? Token { get; set; }
+
+    private string? _email;
+    private bool _suppressed;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _email = Links.Read(Token);
+        if (_email is not null)
+            _suppressed = await Subscriptions.IsSuppressedAsync(_email, CancellationToken.None);
+    }
+
+    private async Task UnsubscribeAsync()
+    {
+        if (_email is null)
+            return;
+        await Subscriptions.UnsubscribeAsync(_email, CancellationToken.None);
+        _suppressed = true;
+    }
+
+    private async Task ResubscribeAsync()
+    {
+        if (_email is null)
+            return;
+        try
+        {
+            await Subscriptions.ResubscribeAsync(_email, CancellationToken.None);
+            _suppressed = false;
+        }
+        catch (SchedulingException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private RenderFragment? Error() => _error is null ? null : @<p class="message error" role="alert">@_error</p>;
+}

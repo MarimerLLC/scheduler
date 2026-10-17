@@ -70,6 +70,7 @@ app.MapRazorComponents<App>()
 app.MapMcp(McpResource.Path).RequireAuthorization(IdentitySetup.McpPolicy).RequireRateLimiting(RateLimits.Mcp);
 
 app.MapSchedulerIdentity();
+app.MapUnsubscribe();
 app.MapDefaultEndpoints();
 
 await app.RunAsync();
