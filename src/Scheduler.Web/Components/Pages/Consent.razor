@@ -1,0 +1,105 @@
+@page "/connect/consent"
+@using OpenIddict.Abstractions
+@using Scheduler.Core.Model
+@using Scheduler.Web.Identity
+@inject IOpenIddictApplicationManager Applications
+
+@* Static, and never in a frame. The authorization endpoint sends the browser here with the client's request
+   (already validated by OpenIddict); the form posts the same parameters back, and OpenIddict validates them
+   again. MCP authorization requires showing the redirect host, and warning about localhost redirects, which
+   any program on the machine can claim. See docs/design.md, "MCP". *@
+
+<PageTitle>Connect an app</PageTitle>
+
+@if (_client is null || _email is null)
+{
+    <h1>Connect an app</h1>
+    <p>This request to connect an app isn't valid any more. Start connecting it again from the app.</p>
+}
+else
+{
+    <h1>Allow @_client to use Scheduler?</h1>
+
+    <p>Signed in as <strong>@_email</strong>. <a href="@_switchAccountUrl" data-enhance-nav="false">Not you?</a></p>
+
+    <p>
+        @_client will act as you on this server: it can see the scheduling requests you organize or are
+        invited to, vote on them, and create, change or cancel events you organize.
+    </p>
+
+    <dl class="consent-details">
+        <dt>App</dt>
+        <dd>
+            @_client
+            @if (_publisher is not null)
+            {
+                <span class="hint">(described at <code>@_publisher</code>)</span>
+            }
+            else
+            {
+                <span class="hint">(registered itself; the name isn't verified)</span>
+            }
+        </dd>
+        <dt>Sends you back to</dt>
+        <dd><code>@_redirectHost</code></dd>
+    </dl>
+
+    @if (_loopback)
+    {
+        <p class="message">
+            The app is waiting on <code>@_redirectHost</code>, a program on this computer. Only allow this if you
+            just started connecting @_client yourself: any program on this computer can claim to be it.
+        </p>
+    }
+
+    <form method="post" action="@AuthorizationEndpoint.Path" class="consent-actions">
+        <AntiforgeryToken />
+        @foreach (var (name, value) in _parameters)
+        {
+            <input type="hidden" name="@name" value="@value" />
+        }
+        <button type="submit" name="@AuthorizationEndpoint.DecisionField" value="@AuthorizationEndpoint.Allow">Allow</button>
+        <button type="submit" name="@AuthorizationEndpoint.DecisionField" value="deny">Deny</button>
+    </form>
+}
+
+@code {
+    [CascadingParameter] public HttpContext HttpContext { get; set; } = default!;
+
+    private string? _client;
+    private string? _publisher;
+    private string? _email;
+    private string? _redirectHost;
+    private string? _switchAccountUrl;
+    private bool _loopback;
+    private List<(string Name, string Value)> _parameters = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Clickjacking: an "Allow" button must never be shown inside someone else's page.
+        HttpContext.Response.Headers.XFrameOptions = "DENY";
+        HttpContext.Response.Headers.ContentSecurityPolicy = "frame-ancestors 'none'";
+
+        _email = CallerResolver.FromPrincipal(HttpContext.User, Channel.Web)?.VerifiedEmails[0];
+
+        var query = HttpContext.Request.Query;
+        _parameters = query.SelectMany(p => p.Value.Select(v => (p.Key, v ?? ""))).ToList();
+        // Signing out and back in returns to the same authorization request.
+        _switchAccountUrl = ExternalSignIn.SignOutPath + QueryString.Create("returnUrl", AuthorizationEndpoint.Path + HttpContext.Request.QueryString);
+
+        if (!Uri.TryCreate(query["redirect_uri"], UriKind.Absolute, out var redirect)
+            || await Applications.FindByClientIdAsync(query["client_id"].ToString()) is not { } application)
+            return;
+
+        _client = await Applications.GetLocalizedDisplayNameAsync(application) ?? "An unnamed app";
+        var properties = await Applications.GetPropertiesAsync(application);
+        if (properties.TryGetValue(ClientRegistration.RegistrationProperty, out var registration)
+            && registration.GetString() == ClientRegistration.MetadataDocument
+            && Uri.TryCreate(await Applications.GetClientIdAsync(application), UriKind.Absolute, out var clientId))
+        {
+            _publisher = clientId.Host;
+        }
+        _redirectHost = redirect.IsDefaultPort ? redirect.Host : $"{redirect.Host}:{redirect.Port}";
+        _loopback = redirect.IsLoopback;
+    }
+}

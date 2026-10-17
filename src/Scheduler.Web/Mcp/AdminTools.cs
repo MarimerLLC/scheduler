@@ -15,7 +15,7 @@ namespace Scheduler.Web.Mcp;
 /// and every call is checked again by <see cref="IAdminService"/>.
 /// </summary>
 [McpServerToolType]
-public sealed class AdminTools(IAdminService admin, IHttpContextAccessor http, IHostEnvironment environment)
+public sealed class AdminTools(IAdminService admin, IHttpContextAccessor http)
 {
     public const string ListOrganizersName = "list_organizers";
     public const string AddOrganizerName = "add_organizer";
@@ -61,7 +61,6 @@ public sealed class AdminTools(IAdminService admin, IHttpContextAccessor http, I
             var services = context.Services!;
             var caller = CallerResolver.FromHttpContext(
                 services.GetRequiredService<IHttpContextAccessor>().HttpContext,
-                services.GetRequiredService<IHostEnvironment>(),
                 Channel.Mcp);
             var isAdmin = caller is not null && services.GetRequiredService<IOptions<SchedulingOptions>>().Value.IsAdmin(caller);
             if (!isAdmin)
@@ -72,7 +71,7 @@ public sealed class AdminTools(IAdminService admin, IHttpContextAccessor http, I
 
     private async Task<string> Run<T>(Func<CallerIdentity, Task<T>> action)
     {
-        var caller = CallerResolver.FromHttpContext(http.HttpContext, environment, Channel.Mcp)
+        var caller = CallerResolver.FromHttpContext(http.HttpContext, Channel.Mcp)
             ?? throw new McpException("You are not signed in to the scheduling server.");
         try
         {

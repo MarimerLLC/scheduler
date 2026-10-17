@@ -1,7 +1,6 @@
 @inherits LayoutComponentBase
 @using Microsoft.AspNetCore.Components.Authorization
 @using Scheduler.Web.Identity
-@inject IWebHostEnvironment Environment
 
 <header class="site-header">
     <a class="brand" href="/">Scheduler</a>
@@ -13,16 +12,10 @@
         <AuthorizeView>
             <Authorized>
                 @context.User.Identity?.Name
-                @if (Environment.IsDevelopment())
-                {
-                    <a href="@DevSignIn.SignOutPath" data-enhance-nav="false">Sign out</a>
-                }
+                <a href="@ExternalSignIn.SignOutPath" data-enhance-nav="false">Sign out</a>
             </Authorized>
             <NotAuthorized>
-                @if (Environment.IsDevelopment())
-                {
-                    <a href="@DevSignIn.SignInPath" data-enhance-nav="false">Sign in</a>
-                }
+                <a href="@ExternalSignIn.SignInPath" data-enhance-nav="false">Sign in</a>
             </NotAuthorized>
         </AuthorizeView>
     </span>

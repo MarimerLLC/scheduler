@@ -26,7 +26,7 @@ public sealed record McpVote(
 /// a <see cref="SchedulingException"/> into an <see cref="McpException"/> so its message reaches the agent.
 /// </summary>
 [McpServerToolType]
-public sealed class SchedulingTools(ISchedulingService scheduling, IAdminService admin, IHttpContextAccessor http, IHostEnvironment environment)
+public sealed class SchedulingTools(ISchedulingService scheduling, IAdminService admin, IHttpContextAccessor http)
 {
     [McpServerTool(Name = "get_my_access", Title = "What can I do here?", ReadOnly = true, Idempotent = true, OpenWorld = false)]
     [Description("Shows the user's verified addresses on this server and whether they may create scheduling events (canOrganize) or administer the server (isAdmin). Anyone invited to an event can vote without being an organizer.")]
@@ -135,7 +135,7 @@ public sealed class SchedulingTools(ISchedulingService scheduling, IAdminService
 
     private async Task<string> Run<T>(Func<CallerIdentity, Task<T>> action)
     {
-        var caller = CallerResolver.FromHttpContext(http.HttpContext, environment, Channel.Mcp)
+        var caller = CallerResolver.FromHttpContext(http.HttpContext, Channel.Mcp)
             ?? throw new McpException("You are not signed in to the scheduling server.");
         try
         {

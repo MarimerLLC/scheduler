@@ -7,13 +7,12 @@ using Scheduler.Core;
 namespace Scheduler.Web.Identity;
 
 /// <summary>
-/// Development-only browser sign-in: type any address and become that person, so the web UI can be built
-/// and tried before real OIDC sign-in (roadmap item 3) exists. Not mapped in any other environment.
+/// Development-only browser sign-in: type any address and become that person, so the web UI and the MCP
+/// OAuth flow can be tried without Microsoft or Google credentials. Not mapped in any other environment.
 /// </summary>
 internal static class DevSignIn
 {
     public const string SignInPath = "/dev/signin";
-    public const string SignOutPath = "/dev/signout";
 
     public static void MapDevSignIn(this WebApplication app)
     {
@@ -27,7 +26,7 @@ internal static class DevSignIn
               <h1>Development sign-in</h1>
               <p>Development only: sign in as any address. Admins are listed in <code>Scheduler:Admins</code>.</p>
               <form method="post">
-                <input type="hidden" name="returnUrl" value="{{WebUtility.HtmlEncode(LocalOrRoot(returnUrl))}}">
+                <input type="hidden" name="returnUrl" value="{{WebUtility.HtmlEncode(ExternalSignIn.LocalOrRoot(returnUrl))}}">
                 <label>Email <input type="email" name="email" required autofocus></label>
                 <button type="submit">Sign in</button>
               </form>
@@ -51,16 +50,7 @@ internal static class DevSignIn
                 [new Claim(ClaimTypes.Email, email), new Claim(ClaimTypes.Name, email)],
                 CookieAuthenticationDefaults.AuthenticationScheme);
             await http.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity));
-            return Results.LocalRedirect(LocalOrRoot(form["returnUrl"]));
+            return Results.LocalRedirect(ExternalSignIn.LocalOrRoot(form["returnUrl"]));
         }).DisableAntiforgery();
-
-        app.MapGet(SignOutPath, async (HttpContext http) =>
-        {
-            await http.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-            return Results.LocalRedirect("/");
-        });
     }
-
-    private static string LocalOrRoot(string? url) =>
-        !string.IsNullOrEmpty(url) && url.StartsWith('/') && !url.StartsWith("//", StringComparison.Ordinal) ? url : "/";
 }
