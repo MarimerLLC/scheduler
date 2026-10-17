@@ -8,6 +8,8 @@ on:
       - '*.slnx'
       - 'global.json'
       - 'Directory.Build.props'
+      - 'Dockerfile'
+      - 'dotnet-tools.json'
       - '.github/workflows/**'
   pull_request:
     paths:
@@ -16,6 +18,8 @@ on:
       - '*.slnx'
       - 'global.json'
       - 'Directory.Build.props'
+      - 'Dockerfile'
+      - 'dotnet-tools.json'
       - '.github/workflows/**'
 
 jobs:
@@ -37,3 +41,16 @@ jobs:
 
       - name: Test
         run: dotnet test Scheduler.slnx --no-build
+
+  # The image is built and pushed by hand (k8s/build.sh); this only catches a Dockerfile or migration bundle that
+  # no longer builds.
+  docker-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build the image
+        run: docker build -t scheduler:ci .

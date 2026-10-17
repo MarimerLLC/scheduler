@@ -5,8 +5,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="MailKit" Version="4.18.1" />
     <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.2.0" />
     <PackageReference Include="OpenIddict.AspNetCore" Version="7.7.2" />
+    <!-- Lifts MailKit's transitive 10.0.0, which has known vulnerabilities. -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
   </ItemGroup>
 
   <ItemGroup>

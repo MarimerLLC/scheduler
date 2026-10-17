@@ -65,7 +65,7 @@ public sealed class VotingLinkTests
     [TestMethod]
     public async Task Unsubscribing_suppresses_the_address_once_and_can_be_undone()
     {
-        var subscriptions = new SubscriptionService(_h.Db, _h.Clock);
+        var subscriptions = _h.Subscriptions;
 
         await subscriptions.UnsubscribeAsync(" Bob@Example.com ", None);
         await subscriptions.UnsubscribeAsync("bob@example.com", None);
@@ -83,7 +83,7 @@ public sealed class VotingLinkTests
     [TestMethod]
     public async Task A_bounced_address_cant_be_resubscribed_from_a_link()
     {
-        var subscriptions = new SubscriptionService(_h.Db, _h.Clock);
+        var subscriptions = _h.Subscriptions;
         await _h.WithDbAsync(db =>
         {
             db.Suppressions.Add(new EmailSuppression { Email = "bob@example.com", Reason = SuppressionReason.Bounced, At = _h.Clock.GetCurrentInstant() });
@@ -97,7 +97,7 @@ public sealed class VotingLinkTests
     [TestMethod]
     public async Task The_organizer_is_told_which_invitees_wont_get_the_email()
     {
-        var subscriptions = new SubscriptionService(_h.Db, _h.Clock);
+        var subscriptions = _h.Subscriptions;
         await subscriptions.UnsubscribeAsync("carol@example.com", None);
 
         var ev = await _h.CreateAsync();
@@ -105,6 +105,38 @@ public sealed class VotingLinkTests
         Assert.IsNotNull(ev.Notices);
         StringAssert.Contains(ev.Notices.Single(), "carol@example.com has asked this server not to email them");
         Assert.HasCount(3, ev.Participants, "Carol is still invited and can vote if she signs in");
+    }
+
+    [TestMethod]
+    public async Task A_refused_address_is_suppressed_and_the_organizer_is_told_once()
+    {
+        var ev = await _h.CreateAsync();
+        var before = (await _h.OutboxAsync()).Count;
+
+        await _h.Subscriptions.RecordBounceAsync("carol@example.com", ev.Id, "550 5.1.1 No such user", None);
+        await _h.Subscriptions.RecordBounceAsync("carol@example.com", ev.Id, "550 5.1.1 No such user", None);
+
+        Assert.IsTrue(await _h.Subscriptions.IsSuppressedAsync("carol@example.com", None));
+        var told = (await _h.OutboxAsync()).Skip(before).Single();
+        Assert.AreEqual("rocky@example.com", told.To);
+        StringAssert.StartsWith(told.Subject, $"[sched:{ev.ShortCode}] Couldn't reach carol@example.com");
+        var audit = (await _h.AuditAsync()).Last();
+        Assert.AreEqual("email.bounced", audit.Action);
+        Assert.AreEqual(ev.Id, audit.EventId);
+        StringAssert.Contains(audit.Detail, "No such user");
+        await Assert.ThrowsExactlyAsync<SchedulingValidationException>(() => _h.Subscriptions.ResubscribeAsync("carol@example.com", None));
+    }
+
+    [TestMethod]
+    public async Task The_organizers_own_bounce_isnt_reported_to_them()
+    {
+        var ev = await _h.CreateAsync();
+        var before = (await _h.OutboxAsync()).Count;
+
+        await _h.Subscriptions.RecordBounceAsync("rocky@example.com", ev.Id, "550 mailbox full", None);
+
+        Assert.AreEqual(before, (await _h.OutboxAsync()).Count);
+        Assert.IsTrue(await _h.Subscriptions.IsSuppressedAsync("rocky@example.com", None));
     }
 
     private async Task<string> TokenOfAsync(string email, Guid? eventId = null)

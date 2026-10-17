@@ -45,6 +45,8 @@ and unsubscribe links, and the reminder, deadline and purge jobs. The roadmap is
 | `tests/Scheduler.Web.Tests` | The MCP OAuth flow end to end with the MCP SDK client, the organizer pages (prerendered), the voting page, HTML emails and unsubscribing, emailed sign-in and address links, rate limits, plus the identity rules |
 | `docs/design.md` | Design document |
 | `docs/identity-setup.md` | Operations: Microsoft and Google app registrations, token certificates, Kubernetes settings |
+| `docs/deployment.md` | Operations: deploying to `lhotkalake` (database, SMTP relay and DNS, secrets, build and deploy, checks) |
+| `k8s/` | Kubernetes manifests and the build and deploy scripts |
 
 ## Build and test
 

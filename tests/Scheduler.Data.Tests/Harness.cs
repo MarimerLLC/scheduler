@@ -40,6 +40,7 @@ internal sealed class Harness
         var composer = new PlainTextEmailComposer(BaseUrl + "/mcp");
         Service = new SchedulingService(db, clock, options, links, composer, Changes);
         Jobs = new SchedulingJobs(db, clock, options, links, composer, Changes);
+        Subscriptions = new SubscriptionService(db, clock, options, composer);
         AdminService = new AdminService(db, clock, options);
         AccessTokens = new AccessTokenService(db, clock);
         Accounts = new AccountService(db, clock, options, new PlainTextEmailComposer(BaseUrl + "/mcp"));
@@ -53,6 +54,7 @@ internal sealed class Harness
     public AccessTokenService AccessTokens { get; }
     public AccountService Accounts { get; }
     public SchedulingJobs Jobs { get; }
+    public SubscriptionService Subscriptions { get; }
 
     /// <summary>Records every change the services publish.</summary>
     public RecordingEventChanges Changes { get; } = new();

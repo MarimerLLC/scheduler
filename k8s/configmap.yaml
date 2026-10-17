@@ -1,0 +1,20 @@
+# Settings that aren't secret and are the same for every deployment of this host. Secrets and per-person settings
+# (admins, organizers, the SMTP relay) are in the scheduler-app secret: see secret.example.yaml and docs/deployment.md.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: scheduler-config
+  namespace: scheduler
+  labels:
+    app.kubernetes.io/name: scheduler
+data:
+  ASPNETCORE_ENVIRONMENT: Production
+  # TLS ends at the Tailscale proxy, which sends X-Forwarded-Proto/-For. The app builds its OAuth issuer and MCP
+  # resource URI from the request, so it must trust them; this also gives the rate limits the client IP.
+  ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+  AllowedHosts: scheduler.tail920062.ts.net
+  Scheduler__PublicBaseUrl: https://scheduler.tail920062.ts.net
+  Email__From: scheduler@sched.marimer.llc
+  Email__FromName: Scheduler
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy.loki.svc.cluster.local:4317
+  OTEL_SERVICE_NAME: scheduler

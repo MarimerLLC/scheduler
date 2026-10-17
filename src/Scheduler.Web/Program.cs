@@ -12,13 +12,19 @@ builder.AddServiceDefaults();
 
 builder.AddScheduler();
 
-// Email: SMTP when an endpoint is configured (Mailpit under Aspire), otherwise log-only.
-builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection(EmailOptions.SectionName));
-var smtpEndpoint = SmtpEmailSender.EndpointFromConnectionString(builder.Configuration.GetConnectionString("mailpit"));
-if (smtpEndpoint is not null)
-    builder.Services.AddSingleton<IEmailSender>(sp => new SmtpEmailSender(smtpEndpoint, sp.GetRequiredService<IOptions<EmailOptions>>()));
-else
+// Email: the SMTP relay in Email:Smtp (required outside Development), else Mailpit under Aspire, else (Development
+// only) nothing, which leaves emails in the outbox. See docs/deployment.md.
+var emailSection = builder.Configuration.GetSection(EmailOptions.SectionName);
+builder.Services.Configure<EmailOptions>(emailSection);
+var relay = emailSection.Get<EmailOptions>()?.Smtp is { IsConfigured: true } configured
+    ? configured
+    : SmtpEmailSender.FromConnectionString(builder.Configuration.GetConnectionString("mailpit"));
+if (relay is not null)
+    builder.Services.AddSingleton<IEmailSender>(sp => new SmtpEmailSender(relay, sp.GetRequiredService<IOptions<EmailOptions>>()));
+else if (builder.Environment.IsDevelopment())
     builder.Services.AddSingleton<IEmailSender, LogOnlyEmailSender>();
+else
+    throw new InvalidOperationException("Email:Smtp:Host is not configured. Set Email:Smtp (host, port, username, password) to the relay that sends this server's email.");
 builder.Services.AddHostedService<OutboxDispatcher>();
 builder.Services.AddHostedService<SchedulingJobRunner>();
 

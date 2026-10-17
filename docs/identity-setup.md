@@ -7,7 +7,9 @@ that sign and encrypt OAuth tokens, and the Kubernetes configuration. For why it
 None of this is needed for local development. In Development, `/signin` offers a development sign-in for any
 address, and OpenIddict uses development certificates from your user certificate store.
 
-Throughout, `sched.example.com` stands for the server's public host name.
+Throughout, `sched.example.com` stands for the server's public host name. On `lhotkalake` that is
+`scheduler.tail920062.ts.net`; the rest of the deployment (database, email, manifests) is in
+[deployment.md](deployment.md), which sends you here for step 3.
 
 ## What you need
 

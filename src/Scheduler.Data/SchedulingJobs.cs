@@ -120,6 +120,7 @@ public sealed class SchedulingJobs(
         var ids = await db.Events
             .Where(e => (e.State != EventState.Open && e.State != EventState.Draft && e.ClosedAt != null && e.ClosedAt < closedBefore)
                 || (e.State == EventState.Draft && e.UpdatedAt < draftsBefore))
+            .OrderBy(e => e.Id)
             .Select(e => e.Id)
             .Take(BatchSize)
             .ToListAsync(cancellationToken);

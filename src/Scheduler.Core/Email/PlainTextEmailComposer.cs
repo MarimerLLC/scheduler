@@ -89,6 +89,16 @@ public sealed class PlainTextEmailComposer(string mcpUrl, IUnsubscribeLinks? uns
         return EventEmail(ev.OrganizerEmail, Subject(ev, $"Voting closed: {ev.Title}"), body);
     }
 
+    public ComposedEmail DeliveryProblem(SchedulingEvent ev, string address, string dashboardUrl)
+    {
+        var body = new StringBuilder();
+        body.AppendLine(DeliveryProblemIntro(ev, address));
+        body.AppendLine();
+        body.AppendLine(DeliveryProblemClosing);
+        body.AppendLine($"The event: {dashboardUrl}");
+        return EventEmail(ev.OrganizerEmail, Subject(ev, $"Couldn't reach {address}: {ev.Title}"), body);
+    }
+
     public ComposedEmail AddressVerification(string email, string link, string requestedBy)
     {
         var body = new StringBuilder();
@@ -133,6 +143,9 @@ public sealed class PlainTextEmailComposer(string mcpUrl, IUnsubscribeLinks? uns
     Task<ComposedEmail> IEmailComposer.DeadlinePassedAsync(SchedulingEvent ev, string dashboardUrl) =>
         Task.FromResult(DeadlinePassed(ev, dashboardUrl));
 
+    Task<ComposedEmail> IEmailComposer.DeliveryProblemAsync(SchedulingEvent ev, string address, string dashboardUrl) =>
+        Task.FromResult(DeliveryProblem(ev, address, dashboardUrl));
+
     Task<ComposedEmail> IEmailComposer.AddressVerificationAsync(string email, string link, string requestedBy) =>
         Task.FromResult(AddressVerification(email, link, requestedBy));
 
@@ -161,6 +174,12 @@ public sealed class PlainTextEmailComposer(string mcpUrl, IUnsubscribeLinks? uns
 
     public static string DeadlinePassedClosing(SchedulingEvent ev) =>
         $"To keep going, propose more times (that reopens voting), or ask your assistant to propose more times for scheduling event {ev.ShortCode}.";
+
+    public static string DeliveryProblemIntro(SchedulingEvent ev, string address) =>
+        $"Email about \"{ev.Title}\" to {address} couldn't be delivered: the receiving mail server refused the address.";
+
+    public const string DeliveryProblemClosing =
+        "This server won't email that address again. They are still a participant; check the address with them, or tell them about the meeting yourself.";
 
     /// <summary>Active slots the participant hasn't answered, earliest first.</summary>
     public static IReadOnlyList<ProposedSlot> UnansweredSlots(SchedulingEvent ev, Participant participant) =>

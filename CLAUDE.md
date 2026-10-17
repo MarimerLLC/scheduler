@@ -9,6 +9,8 @@ it when a decision changes.
 - `dotnet build Scheduler.slnx`
 - `dotnet test Scheduler.slnx` (`Scheduler.Data.Tests` and `Scheduler.Web.Tests` need Docker for PostgreSQL)
 - Local run (needs Docker): `dotnet run --project src/Scheduler.AppHost`
+- Deploy: `k8s/build.sh <version>` then `k8s/deploy.sh <version>`, per `docs/deployment.md`. Never apply
+  `k8s/secret.example.yaml`; secrets are made by hand.
 - New migration: `dotnet tool restore`, then
   `dotnet ef migrations add <Name> --project src/Scheduler.Data --startup-project src/Scheduler.Data --output-dir Migrations`
 

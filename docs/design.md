@@ -60,7 +60,7 @@ least: the coordinator learns three-valued answers about specific slots, and not
   RockBot, ...)     ▼                                   ▼
                ┌──────────────────────────────────────────────┐
                │ Scheduler.Web (one ASP.NET Core process)     │
- Browser ─────►│  Blazor UI      /mcp endpoint     webhooks   │
+ Browser ─────►│  Blazor UI      /mcp endpoint                │
  (magic link   │      └─────────────┬──────────────┘          │
   or sign-in)  │            ISchedulingService                │
                │                    │                         │
@@ -68,7 +68,7 @@ least: the coordinator learns three-valued answers about specific slots, and not
                │  expiry, purge                               │
                └───────┬───────────────────────┬──────────────┘
                        ▼                       ▼
-                  PostgreSQL           Email provider (outbound only)
+                  PostgreSQL           SMTP relay (outbound only)
                                                │
                                                ▼
                                     Participants' inboxes
@@ -533,7 +533,7 @@ Outbound only. Nothing parses inbound mail.
 | Deadline passed | Organizer | Event expires (voting closed; proposing more times reopens it) |
 | It's set | Everyone | Finalized |
 | Cancelled | Everyone invited | Cancelled |
-| Delivery problem | Organizer | A participant's address bounces |
+| Delivery problem | Organizer | The relay refuses a participant's address (an SMTP 5xx); once per address |
 | Confirm an address | The address | Someone asks to add it to their account |
 | Sign-in link | The address | Someone signing in asks for a link to an address the provider didn't verify |
 
@@ -562,13 +562,19 @@ asked for them, and they are rate limited per address.
   `OutboxDispatcher` sends due rows, saves after each one (a crash resends at most one), backs off
   exponentially (capped at an hour) and marks a row failed after 8 attempts. Suppressed addresses are
   skipped. Single replica; scaling out needs row claiming (`FOR UPDATE SKIP LOCKED`).
-- **Provider** behind `IEmailSender`: SMTP to Mailpit in development; a hosted transactional provider in
-  production (Postmark, Amazon SES, Azure Communication Services Email or SendGrid; choose on price and
-  existing accounts).
-- **Bounces and complaints** arrive as provider webhooks (`/webhooks/email/{provider}`, signature
-  verified). They add a suppression, write an audit entry and tell the organizer.
-- **DNS.** A dedicated sending subdomain (e.g. `sched.<domain>`) with SPF, DKIM and DMARC. DMARC aggregate
-  reports go to an ordinary mailbox someone checks occasionally.
+- **Provider**: plain SMTP behind `IEmailSender` (`SmtpEmailSender`, MailKit): any relay allowed to send as the
+  sending domain, configured under `Email:Smtp` and required outside Development; Mailpit in development.
+  Production uses Brevo's free SMTP relay (300 emails a day, which the expected volume is well under); any
+  other relay is a configuration change. A provider's API and webhooks were left out on purpose for v1: SMTP
+  works with any of them, and the volume is small.
+- **Bounces**: only what the relay says while sending. A recipient refused with a 5xx is a
+  `PermanentDeliveryException`: the row fails without retries, the address is suppressed (`Bounced`), it is
+  audited (`email.bounced`) and the event's organizer gets a "Delivery problem" email
+  (`ISubscriptionService.RecordBounceAsync`). Bounces and spam complaints that come back later by mail go to the
+  relay and aren't seen; they would need the provider's webhooks (not in v1). Any other failure is retried.
+- **DNS.** A dedicated sending subdomain, `sched.marimer.llc`, with SPF, DKIM and DMARC, so a deliverability
+  problem can't touch the main domain's mail. DMARC aggregate reports go to an ordinary mailbox someone checks
+  occasionally. The records are in [deployment.md](deployment.md).
 
 ## Background jobs
 
@@ -717,20 +723,29 @@ Purged with the event. Admin actions (`organizer.added`, `organizer.removed`), t
 
 ## Deployment
 
-- One container image (`Dockerfile` at the repo root), deployed to the `lhotkalake` cluster in its own
-  namespace. One replica in v1.
-- PostgreSQL in-cluster (or managed), connection string `ConnectionStrings__schedulerdb` from a secret.
-- Secrets: `Scheduler:MagicLinkKey`, `Identity:Microsoft:ClientSecret` and `Identity:Google:ClientSecret`,
-  email provider key and webhook signing secret, `Identity:SigningCertificate` and
-  `Identity:EncryptionCertificate`.
+The runbook is [deployment.md](deployment.md); the manifests and scripts are in `k8s/`.
+
+- One container image (`Dockerfile` at the repo root, `rockylhotka/scheduler:<version>` on Docker Hub),
+  deployed to the `lhotkalake` cluster in its own namespace, `scheduler`, by `k8s/deploy.sh`. One replica, with
+  the `Recreate` strategy so a rollout never runs two (two outbox dispatchers could send an email twice).
+- **Public host**: `https://scheduler.tail920062.ts.net` through Tailscale Funnel, like threa: no public ingress or
+  certificate setup on the cluster. Voting links, OAuth redirect URIs and the MCP endpoint all use it.
+- PostgreSQL: a `scheduler` database and login on the cluster's shared PostgreSQL
+  (`postgres.default.svc.cluster.local`); the connection string is `ConnectionStrings__schedulerdb` in a secret.
+- Secrets, both hand-made: `scheduler-identity` (Microsoft and Google clients, token certificates;
+  identity-setup.md) and `scheduler-app` (connection string, `Scheduler:MagicLinkKey`, admins and organizers,
+  the SMTP relay; `k8s/secret.example.yaml`).
 - Forwarded headers on (`ASPNETCORE_FORWARDEDHEADERS_ENABLED=true`) and `AllowedHosts` set to the public
-  host, because the OAuth issuer and the MCP resource URI are built from the request.
-- **Data Protection keys persisted to the database** (`PersistKeysToDbContext`), so cookies, magic-link
-  sessions and unsubscribe tokens survive restarts.
-- Migrations applied by a migration bundle run as a job before rollout, not at app startup. (In
-  Development only, the app applies them at startup so `dotnet run` under Aspire just works.)
-- Probes: `/alive` (liveness), `/health` (readiness).
-- Public hostname with TLS; the email sending subdomain set up separately.
+  host, because the OAuth issuer and the MCP resource URI are built from the request. Tailscale's proxy sends
+  `X-Forwarded-Proto` and `X-Forwarded-For`.
+- **Data Protection keys persisted to the database** (`PersistKeysToDbContext`, table `DataProtectionKeys`), so
+  sign-in cookies, unsubscribe links and pending email sign-ins survive restarts. Stored unencrypted: whoever
+  can read the database can already read everything in it.
+- Migrations applied by an EF Core migration bundle (`/migrate/efbundle` in the image) that a Job runs before
+  the rollout; a failed migration leaves the running version alone. (In Development only, the app applies them
+  at startup so `dotnet run` under Aspire just works.)
+- Probes: `/alive` (liveness), `/health` (readiness). Read-only root filesystem, non-root, all capabilities
+  dropped. Telemetry to the cluster's Alloy over OTLP.
 
 ## Roadmap
 
@@ -738,22 +753,23 @@ Purged with the event. Admin actions (`organizer.added`, `organizer.removed`), t
    Testcontainers PostgreSQL.~~ Done.
 2. ~~**Email and voting page.** Templates, invitation/finalize/cancel flows through the outbox, magic-link
    voting page, unsubscribe.~~ Done. The reminder and "deadline passed" emails come with their jobs (item 4),
-   bounce notices with the provider webhooks (item 5).
+   bounce notices with production email delivery (item 5).
 3. ~~**Identity.** Web sign-in (Microsoft, Google), MCP OAuth (OpenIddict, federated login, client ID
    metadata documents and dynamic registration), organizer allowlist, personal access tokens, verifying an
    address by email link, rate limits on `/mcp` and voting, purging unused dynamically registered clients.~~
    Done.
 4. ~~**Organizer UI and jobs.** Dashboard with live tallies, compose page, deadline, reminder, purge and
    tzdb jobs.~~ Done.
-5. **Production.** Email provider and webhooks, DNS, deployment.
+5. ~~**Production.** Email delivery, DNS, deployment.~~ Done: SMTP relay with bounce handling on refusal,
+   Funnel host, manifests, migration Job and runbook. The first deployment, and the relay and DNS for
+   `sched.marimer.llc`, are steps in [deployment.md](deployment.md). Provider webhooks for later bounces and
+   complaints are left for when the volume calls for them.
 6. **v1.1.** `wait_for_update` as an optional task with a durable task store; RockBot integration (an
    `mcp.json` entry plus handling the invitation emails it already reads through Adjutant); `.ics`
    fallback invite for organizers without a calendar MCP.
 
 ## Open questions
 
-- Public hostname and email sending subdomain.
-- Email provider.
 - Retention period: is 30 days after closing right?
 - Should participants see each other's addresses, or only names? (Default: both, like a normal invite.)
 - Should the organizer be able to mark their own slots "if necessary", to offer times they'd rather avoid?
