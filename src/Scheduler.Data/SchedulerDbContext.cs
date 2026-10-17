@@ -23,6 +23,7 @@ public sealed class SchedulerDbContext(DbContextOptions<SchedulerDbContext> opti
     public DbSet<EmailSuppression> Suppressions => Set<EmailSuppression>();
     public DbSet<OrganizerGrant> OrganizerGrants => Set<OrganizerGrant>();
     public DbSet<PersonalAccessToken> PersonalAccessTokens => Set<PersonalAccessToken>();
+    public DbSet<EmailVerification> EmailVerifications => Set<EmailVerification>();
 
     protected override void OnModelCreating(ModelBuilder model)
     {
@@ -143,6 +144,22 @@ public sealed class SchedulerDbContext(DbContextOptions<SchedulerDbContext> opti
             e.Property(x => x.Prefix).HasMaxLength(16);
             e.HasIndex(x => x.TokenHash).IsUnique();
             e.HasIndex(x => x.UserId);
+            e.HasOne<UserAccount>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        model.Entity<EmailVerification>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.Email).HasMaxLength(FieldLimits.EmailMax);
+            e.Property(x => x.Purpose).HasConversion<string>().HasMaxLength(16);
+            e.Property(x => x.DisplayName).HasMaxLength(FieldLimits.DisplayNameMax);
+            e.Property(x => x.ReturnUrl).HasMaxLength(1000);
+            e.Property(x => x.TokenHash).HasMaxLength(32);
+            e.HasIndex(x => x.TokenHash).IsUnique();
+            e.HasIndex(x => new { x.Email, x.CreatedAt });
+            e.HasIndex(x => new { x.UserId, x.CreatedAt });
+            e.HasIndex(x => x.ExpiresAt);
             e.HasOne<UserAccount>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
         });
 

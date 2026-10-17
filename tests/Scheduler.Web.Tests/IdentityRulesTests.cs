@@ -34,9 +34,10 @@ public sealed class IdentityRulesTests
         Assert.AreEqual("pat@contoso.com", ExternalEmail.Read("Microsoft", Principal(("email", "pat@contoso.com"), ("tid", tenant), ("xms_edov", "true"))).Email);
         Assert.AreEqual("pat@contoso.com", ExternalEmail.Read("Microsoft", Principal(("email", "pat@contoso.com"), ("tid", tenant), ("xms_edov", "1"))).Email);
 
-        var unverified = ExternalEmail.Read("Microsoft", Principal(("email", "pat@contoso.com"), ("tid", tenant)));
+        var unverified = ExternalEmail.Read("Microsoft", Principal(("email", "Pat@Contoso.com"), ("tid", tenant)));
         Assert.IsNull(unverified.Email);
         StringAssert.Contains(unverified.Error, "doesn't confirm");
+        Assert.AreEqual("pat@contoso.com", unverified.UnverifiedEmail, "the address can still be proved by an emailed link");
     }
 
     [TestMethod]

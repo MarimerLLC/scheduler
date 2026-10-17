@@ -1,5 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using NodaTime;
+using NodaTime.Text;
 using OpenIddict.Abstractions;
 
 namespace Scheduler.Web.Identity;
@@ -8,19 +10,23 @@ namespace Scheduler.Web.Identity;
 /// OAuth Dynamic Client Registration (RFC 7591), which MCP 2026-07-28 deprecates in favour of client ID
 /// metadata documents but older clients still use. Registers public clients only: any requested
 /// authentication method is replaced with <c>none</c> (RFC 7591 lets the server substitute values), so
-/// PKCE is what protects the code. Rate limited per address, because anyone can call it.
+/// PKCE is what protects the code. Rate limited per client IP, because anyone can call it. Clients that are
+/// never used are deleted after a day (<see cref="IdentityCleanup"/>).
 /// </summary>
 internal static class DynamicClientRegistration
 {
-    public const string RateLimitPolicy = "client-registration";
     public const string UnnamedClient = "Unnamed MCP client";
+    public const string ClientIdPrefix = "dcr_";
+
+    /// <summary>Application property: when the client registered (ISO 8601), so an unused one can be deleted.</summary>
+    public const string RegisteredAtProperty = "registered_at";
 
     public static void MapDynamicClientRegistration(this WebApplication app) =>
         app.MapPost("/" + AttachClientRegistrationMetadata.RegistrationPath, RegisterAsync)
             .DisableAntiforgery()
-            .RequireRateLimiting(RateLimitPolicy);
+            .RequireRateLimiting(RateLimits.ClientRegistration);
 
-    private static async Task<IResult> RegisterAsync(HttpRequest request, IOpenIddictApplicationManager applications, CancellationToken cancellationToken)
+    private static async Task<IResult> RegisterAsync(HttpRequest request, IOpenIddictApplicationManager applications, IClock clock, CancellationToken cancellationToken)
     {
         RegistrationRequest? body;
         try
@@ -43,15 +49,17 @@ internal static class DynamicClientRegistration
         if (redirectError is not null)
             return Error(redirectError, "invalid_redirect_uri");
 
-        var clientId = "dcr_" + Guid.NewGuid().ToString("N");
+        var clientId = ClientIdPrefix + Guid.NewGuid().ToString("N");
         var name = ClientRegistration.CleanName(body.ClientName) ?? UnnamedClient;
         var descriptor = ClientRegistration.Descriptor(clientId, name, redirectUris, ClientRegistration.Dynamic);
+        var now = clock.GetCurrentInstant();
+        descriptor.Properties[RegisteredAtProperty] = JsonSerializer.SerializeToElement(InstantPattern.ExtendedIso.Format(now));
         await applications.CreateAsync(descriptor, cancellationToken);
 
         return Results.Json(new RegistrationResponse
         {
             ClientId = clientId,
-            ClientIdIssuedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            ClientIdIssuedAt = now.ToUnixTimeSeconds(),
             ClientName = name,
             RedirectUris = [.. redirectUris.Select(u => u.OriginalString)],
             GrantTypes = ["authorization_code", "refresh_token"],

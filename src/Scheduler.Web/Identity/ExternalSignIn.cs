@@ -45,7 +45,7 @@ internal static class ExternalSignIn
         });
     }
 
-    private static async Task<IResult> CallbackAsync(HttpContext http, ILoggerFactory loggers)
+    private static async Task<IResult> CallbackAsync(HttpContext http, ILoggerFactory loggers, EmailLinkSignIn emailLinks)
     {
         var result = await http.AuthenticateAsync(OpenIddictClientAspNetCoreDefaults.AuthenticationScheme);
         var returnUrl = LocalOrRoot(result.Properties?.RedirectUri);
@@ -56,10 +56,19 @@ internal static class ExternalSignIn
         }
 
         var provider = principal.GetClaim(Claims.Private.ProviderName) ?? "";
-        var (email, displayName, error) = ExternalEmail.Read(provider, principal);
+        var (email, displayName, error, unverified) = ExternalEmail.Read(provider, principal);
+        if (unverified is not null)
+            return Results.LocalRedirect(emailLinks.PageFor(new PendingEmailSignIn(unverified, displayName, returnUrl, provider, error)));
         if (email is null)
             return Results.Redirect(SignInPage(returnUrl, error));
 
+        await SignInAsync(http, email, displayName, provider);
+        return Results.LocalRedirect(returnUrl);
+    }
+
+    /// <summary>Signs the browser in as <paramref name="email"/>, which the caller has verified.</summary>
+    public static Task SignInAsync(HttpContext http, string email, string? displayName, string provider)
+    {
         var identity = new ClaimsIdentity(
             [
                 new Claim(ClaimTypes.Email, email),
@@ -67,11 +76,10 @@ internal static class ExternalSignIn
                 new Claim(Claims.Private.ProviderName, provider),
             ],
             CookieAuthenticationDefaults.AuthenticationScheme);
-        await http.SignInAsync(
+        return http.SignInAsync(
             CookieAuthenticationDefaults.AuthenticationScheme,
             new ClaimsPrincipal(identity),
             new AuthenticationProperties { IsPersistent = true });
-        return Results.LocalRedirect(returnUrl);
     }
 
     public static string SignInPage(string? returnUrl, string? error = null)

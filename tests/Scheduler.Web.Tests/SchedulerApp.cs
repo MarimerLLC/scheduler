@@ -4,9 +4,12 @@ using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Authentication;
 using ModelContextProtocol.Client;
+using Scheduler.Core.Model;
+using Scheduler.Data;
 using Scheduler.Web.Identity;
 
 namespace Scheduler.Web.Tests;
@@ -15,7 +18,8 @@ namespace Scheduler.Web.Tests;
 /// The real web app in Development (dev sign-in on, development certificates) over a fresh database, with
 /// client metadata documents served by <see cref="MetadataHost"/> instead of the internet.
 /// </summary>
-internal sealed partial class SchedulerApp : WebApplicationFactory<Program>
+/// <param name="settings">Configuration to add, e.g. lower rate limits.</param>
+internal sealed partial class SchedulerApp(params (string Key, string Value)[] settings) : WebApplicationFactory<Program>
 {
     public const string Origin = "http://localhost";
 
@@ -27,9 +31,18 @@ internal sealed partial class SchedulerApp : WebApplicationFactory<Program>
     {
         builder.UseEnvironment("Development");
         builder.UseSetting("ConnectionStrings:schedulerdb", _connectionString);
+        foreach (var (key, value) in settings)
+            builder.UseSetting(key, value);
         builder.ConfigureTestServices(services =>
             services.AddHttpClient(ClientMetadataDocuments.HttpClientName)
                 .ConfigurePrimaryHttpMessageHandler(() => MetadataHost));
+    }
+
+    /// <summary>The emails waiting to be sent, oldest first.</summary>
+    public async Task<List<OutboxEmail>> OutboxAsync()
+    {
+        await using var db = await Services.GetRequiredService<IDbContextFactory<SchedulerDbContext>>().CreateDbContextAsync();
+        return await db.Outbox.OrderBy(o => o.Id).ToListAsync();
     }
 
     /// <summary>An MCP client for <c>/mcp</c> that signs in with the given OAuth options.</summary>
@@ -80,6 +93,22 @@ internal sealed partial class SchedulerApp : WebApplicationFactory<Program>
                 .ToList();
             response = await Http.PostAsync(AuthorizationEndpoint.Path, new FormUrlEncodedContent(fields));
             return RedirectOf(response);
+        }
+
+        /// <summary>
+        /// Submits the form on a static page (the hidden fields Blazor renders: antiforgery token and handler
+        /// name) back to the page's URL, as pressing its button does.
+        /// </summary>
+        public async Task<HttpResponseMessage> SubmitFormAsync(string url)
+        {
+            var page = await Http.GetAsync(url);
+            var html = await page.Content.ReadAsStringAsync();
+            Assert.AreEqual(HttpStatusCode.OK, page.StatusCode, html);
+            var fields = HiddenInput().Matches(html)
+                .Select(m => new KeyValuePair<string, string>(WebUtility.HtmlDecode(m.Groups[1].Value), WebUtility.HtmlDecode(m.Groups[2].Value)))
+                .ToList();
+            Assert.IsTrue(fields.Any(f => f.Key == "_handler"), $"expected a form on {url}: {html}");
+            return await Http.PostAsync(url, new FormUrlEncodedContent(fields));
         }
 
         /// <summary>The last consent page shown, for checking what the person was told.</summary>

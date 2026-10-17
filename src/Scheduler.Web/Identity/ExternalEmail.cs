@@ -3,14 +3,18 @@ using Scheduler.Core;
 
 namespace Scheduler.Web.Identity;
 
-/// <summary>A verified address from an external sign-in, or the reason there isn't one.</summary>
-internal sealed record ExternalEmailResult(string? Email, string? DisplayName, string? Error);
+/// <summary>
+/// A verified address from an external sign-in, or the reason there isn't one. When the provider gave an
+/// address without verifying it, <see cref="UnverifiedEmail"/> holds it, so it can be proved by email instead.
+/// </summary>
+internal sealed record ExternalEmailResult(string? Email, string? DisplayName, string? Error, string? UnverifiedEmail = null);
 
 /// <summary>
 /// Reads a verified email address from a Microsoft or Google sign-in. Not every <c>email</c> claim is
 /// verified: Google says so with <c>email_verified</c>, but Entra's <c>email</c> can be an attribute a tenant
 /// admin or user typed in. Only a personal Microsoft account, or an Entra token carrying
-/// <c>xms_edov</c> (email domain owner verified), proves the address. See docs/design.md, "Identity and authentication".
+/// <c>xms_edov</c> (email domain owner verified), proves the address. Anything else can still be proved by
+/// emailing the address a sign-in link (<see cref="EmailLinkSignIn"/>). See docs/design.md, "Identity and authentication".
 /// </summary>
 internal static class ExternalEmail
 {
@@ -43,12 +47,15 @@ internal static class ExternalEmail
             Microsoft => Claim(principal, "tid") == ConsumerTenantId || IsTrue(Claim(principal, "xms_edov")),
             _ => false,
         };
+        var displayName = string.IsNullOrWhiteSpace(name) ? null : name.Trim();
         if (!verified)
-            return Fail(provider == Microsoft
-                ? $"Your organization's Microsoft sign-in doesn't confirm that you own {email}. Sign in with Google or a personal Microsoft account for that address instead."
-                : $"{provider} hasn't verified {email}.");
+            return new ExternalEmailResult(null, displayName,
+                provider == Microsoft
+                    ? $"Your organization's Microsoft sign-in doesn't confirm that you own {email}."
+                    : $"{provider} hasn't verified {email}.",
+                UnverifiedEmail: email);
 
-        return new ExternalEmailResult(email, string.IsNullOrWhiteSpace(name) ? null : name.Trim(), null);
+        return new ExternalEmailResult(email, displayName, null);
     }
 
     private static ExternalEmailResult Fail(string error) => new(null, null, error);

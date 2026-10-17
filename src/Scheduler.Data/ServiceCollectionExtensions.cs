@@ -21,6 +21,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ISchedulingService, SchedulingService>();
         services.AddScoped<IAdminService, AdminService>();
         services.AddScoped<IAccessTokenService, AccessTokenService>();
+        services.AddScoped<IAccountService, AccountService>();
         return services;
     }
 }

@@ -20,7 +20,8 @@ Throughout, `sched.example.com` stands for the server's public host name.
 | `Identity:SigningCertificate` | Yes | Base64 PKCS#12 (no password): signs the tokens the server issues |
 | `Identity:EncryptionCertificate` | Yes | Base64 PKCS#12 (no password): encrypts them |
 | `AllowedHosts` | Yes | The public host name, e.g. `sched.example.com` |
-| `ASPNETCORE_FORWARDEDHEADERS_ENABLED` | Yes, behind a TLS-terminating proxy | `true` |
+| `ASPNETCORE_FORWARDEDHEADERS_ENABLED` | Yes, behind a TLS-terminating proxy | `true` (also gives the rate limits the real client IP) |
+| `RateLimits:McpPerMinute`, `PagesPerMinute`, `EmailLinksPerHour`, `RegistrationsPerHour` | No | Rate limits; the defaults (120, 30, 10, 10) suit one team. See the design doc, "Abuse prevention". |
 
 Configure at least one provider. A provider with only one of its two values set isn't offered. The app won't
 start without both certificates.
@@ -69,9 +70,9 @@ Then, on the new registration:
 7. **API permissions:** the default delegated `User.Read` is enough. `openid`, `email` and `profile` are
    requested at sign-in. No admin consent is needed.
 
-By design, work and school users whose `email` isn't in a verified domain of their own tenant can't sign in
-with Microsoft. They can sign in with Google for the same address, or wait for email-link verification
-(roadmap).
+Work and school users whose `email` isn't in a verified domain of their own tenant aren't signed in by
+Microsoft alone. They are offered a sign-in link emailed to that address instead (so outbound email must be
+working), or can sign in with Google for the same address.
 
 ## 2. Google
 
@@ -246,7 +247,9 @@ or mistyped one gets a 401 with the `WWW-Authenticate` header.
 | Microsoft: "AADSTS50011: The redirect URI ... does not match" | The registration's Web redirect URI isn't exactly `https://sched.example.com/signin/callback/microsoft` (scheme, host, path, no trailing slash). |
 | Google: "Error 400: redirect_uri_mismatch" | Same, for `https://sched.example.com/signin/callback/google` under the client's Authorized redirect URIs. |
 | Google: "Access blocked: ... has not completed the Google verification process" or only some people can sign in | The app is still in *Testing* under Audience; publish it. |
-| "Your organization's Microsoft sign-in doesn't confirm that you own ..." | The ID token had no `xms_edov=true`. Either the optional claims from step 1.6 are missing, or the address isn't in a verified domain of the user's own tenant. |
+| "Your organization's Microsoft sign-in doesn't confirm that you own ...", with an offer to email a link | The ID token had no `xms_edov=true`. Either the optional claims from step 1.6 are missing, or the address isn't in a verified domain of the user's own tenant. The emailed link works; fix the claims if this happens to everyone in a tenant. |
+| "Several links were sent to ... in the last hour" | An address gets at most 3 confirmation or sign-in links an hour. Use the newest one, or wait. |
+| Requests get 429 "Too many requests" | A rate limit. If everyone hits it at once, forwarded headers are probably off, so all requests share the proxy's IP. |
 | "Your Microsoft account didn't share an email address" | The `email` optional claim is missing, or the user has no email address in the directory. |
 | OAuth endpoints answer "This server only accepts HTTPS requests." | The app sees plain HTTP: set `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true` and check that the ingress sends `X-Forwarded-Proto`. |
 | Metadata shows the wrong host, or every request is 400 "Bad Request - Invalid Hostname" | `AllowedHosts` doesn't match the host the ingress forwards. |

@@ -24,6 +24,7 @@ builder.Services.AddHostedService<OutboxDispatcher>();
 // Browser sign-in (Microsoft, Google), the OAuth authorization server for MCP clients, and bearer tokens on
 // /mcp. See docs/design.md, "Identity and authentication".
 builder.AddSchedulerIdentity();
+builder.AddSchedulerRateLimits();
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddHttpContextAccessor();
 
@@ -65,7 +66,8 @@ app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
-app.MapMcp(McpResource.Path).RequireAuthorization(IdentitySetup.McpPolicy);
+// The rate limiter runs after authorization, so /mcp is limited per caller rather than per IP.
+app.MapMcp(McpResource.Path).RequireAuthorization(IdentitySetup.McpPolicy).RequireRateLimiting(RateLimits.Mcp);
 
 app.MapSchedulerIdentity();
 app.MapDefaultEndpoints();

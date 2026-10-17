@@ -27,13 +27,14 @@ internal static class DevSignIn
               <p>Development only: sign in as any address. Admins are listed in <code>Scheduler:Admins</code>.</p>
               <form method="post">
                 <input type="hidden" name="returnUrl" value="{{WebUtility.HtmlEncode(ExternalSignIn.LocalOrRoot(returnUrl))}}">
-                <label>Email <input type="email" name="email" required autofocus></label>
+                <p><label>Email <input type="email" name="email" required autofocus></label></p>
+                <p><label><input type="checkbox" name="unverified" value="true"> As an unverified address (try signing in by email link)</label></p>
                 <button type="submit">Sign in</button>
               </form>
             </body></html>
             """, "text/html"));
 
-        app.MapPost(SignInPath, async (HttpContext http) =>
+        app.MapPost(SignInPath, async (HttpContext http, EmailLinkSignIn emailLinks) =>
         {
             var form = await http.Request.ReadFormAsync();
             string email;
@@ -46,11 +47,16 @@ internal static class DevSignIn
                 return Results.BadRequest(ex.Message);
             }
 
+            var returnUrl = ExternalSignIn.LocalOrRoot(form["returnUrl"]);
+            if (form["unverified"] == "true")
+                return Results.LocalRedirect(emailLinks.PageFor(new PendingEmailSignIn(
+                    email, null, returnUrl, "Development", "The development sign-in is pretending its provider didn't verify this address.")));
+
             var identity = new ClaimsIdentity(
                 [new Claim(ClaimTypes.Email, email), new Claim(ClaimTypes.Name, email)],
                 CookieAuthenticationDefaults.AuthenticationScheme);
             await http.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity));
-            return Results.LocalRedirect(ExternalSignIn.LocalOrRoot(form["returnUrl"]));
+            return Results.LocalRedirect(returnUrl);
         }).DisableAntiforgery();
     }
 }
