@@ -24,6 +24,15 @@ public sealed class SchedulingOptions
     /// <summary>Base64 HMAC key for voting links, at least 32 bytes. Rotating it invalidates every link.</summary>
     public string? MagicLinkKey { get; set; }
 
+    /// <summary>Events one organizer may create in any 24 hours. See docs/design.md, "Abuse prevention".</summary>
+    public int MaxEventsPerDay { get; set; } = 20;
+
+    /// <summary>
+    /// People one organizer may invite in any 24 hours, counted per participant. New-times, reminder and other
+    /// emails to people already invited don't count.
+    /// </summary>
+    public int MaxInvitationsPerDay { get; set; } = 200;
+
     /// <summary>Whether a configured entry lets <paramref name="email"/> organize.</summary>
     public bool IsAllowlistedOrganizer(string email)
     {

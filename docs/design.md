@@ -627,7 +627,12 @@ The server sends email to addresses it is given, so an open `create_event` would
   with `Retry-After`. Client IPs need forwarded headers behind the ingress, or every request looks like it
   comes from the proxy.
 - Per-address and per-account limits on emailed links and tokens are rules in the services.
-- Not yet: rate limits per organizer (events per day, invitations per day).
+- Per organizer, over a rolling 24 hours (`SchedulingService`, configurable): at most 20 new events
+  (`Scheduler:MaxEventsPerDay`) and 200 people invited (`Scheduler:MaxInvitationsPerDay`), counting every
+  participant of the organizer's events created in that time, cancelled or not. Emails to people already
+  invited (new times, reminders, the result) don't count. An event over either limit is refused whole, with
+  a message saying why. Two events created at the same moment can each pass the check, so the limit can be
+  overshot by one event; that is fine for its purpose.
 - Participants never need an account to vote.
 
 ### Prompt injection

@@ -64,6 +64,7 @@ public sealed class SchedulingService(
         AddSlots(ev, request.Slots, round: 1, now);
         ev.RespondBy = ParseRespondBy(request.RespondBy, ev, now);
         AddParticipants(ev, request.Participants, OwnEmails(caller, account), now, notices);
+        await EnforceOrganizerLimitsAsync(db, account, ev.Participants.Count, now, cancellationToken);
         ev.Open();
 
         db.Events.Add(ev);
@@ -365,6 +366,28 @@ public sealed class SchedulingService(
             account.Emails.Add(new UserEmail { Email = email, UserId = account.Id, VerifiedAt = now });
         db.Users.Add(account);
         return account;
+    }
+
+    /// <summary>
+    /// Per-organizer limits over a rolling 24 hours, so an organizer's account (or a runaway agent) can't turn
+    /// the server into a spam relay. Counts what is in the database, so cancelled events still count.
+    /// </summary>
+    private async Task EnforceOrganizerLimitsAsync(SchedulerDbContext db, UserAccount account, int invitations, Instant now, CancellationToken cancellationToken)
+    {
+        var dayAgo = now - Duration.FromDays(1);
+
+        var events = await db.Events.CountAsync(e => e.OrganizerId == account.Id && e.CreatedAt > dayAgo, cancellationToken);
+        if (events >= Options.MaxEventsPerDay)
+            throw new SchedulingForbiddenException(
+                $"You've created {events} events in the last 24 hours, the most this server allows. Try again later.");
+
+        var invited = await db.Participants.CountAsync(
+            p => p.InvitedAt > dayAgo && db.Events.Any(e => e.Id == p.EventId && e.OrganizerId == account.Id),
+            cancellationToken);
+        if (invited + invitations > Options.MaxInvitationsPerDay)
+            throw new SchedulingForbiddenException(
+                $"This event would invite {invitations} people, and you've invited {invited} in the last 24 hours. " +
+                $"This server allows {Options.MaxInvitationsPerDay} invitations a day. Try again later, or invite fewer people.");
     }
 
     internal static HashSet<string> OwnEmails(CallerIdentity caller, UserAccount? account)
