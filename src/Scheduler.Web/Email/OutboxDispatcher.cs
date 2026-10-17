@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using NodaTime;
 using Scheduler.Core.Email;
 using Scheduler.Core.Model;
+using Scheduler.Core.Services;
 using Scheduler.Data;
 
 namespace Scheduler.Web.Email;
@@ -14,6 +15,7 @@ namespace Scheduler.Web.Email;
 /// </summary>
 internal sealed class OutboxDispatcher(
     IDbContextFactory<SchedulerDbContext> dbFactory,
+    IServiceScopeFactory scopes,
     IEmailSender sender,
     IClock clock,
     ILogger<OutboxDispatcher> logger) : BackgroundService
@@ -66,6 +68,19 @@ internal sealed class OutboxDispatcher(
                         cancellationToken);
                     email.Status = OutboxStatus.Sent;
                     email.SentAt = clock.GetCurrentInstant();
+                }
+                catch (PermanentDeliveryException ex)
+                {
+                    // Retrying won't help: give up now, and stop emailing the address.
+                    email.Attempts++;
+                    email.Status = OutboxStatus.Failed;
+                    email.LastError = ex.Message.Length > 2000 ? ex.Message[..2000] : ex.Message;
+                    await db.SaveChangesAsync(cancellationToken);
+                    logger.LogWarning("Outbox email {Id} to {To} was refused: {Reason}", email.Id, email.To, ex.Message);
+                    await using var scope = scopes.CreateAsyncScope();
+                    await scope.ServiceProvider.GetRequiredService<ISubscriptionService>()
+                        .RecordBounceAsync(email.To, email.EventId, ex.Message, cancellationToken);
+                    continue;
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {

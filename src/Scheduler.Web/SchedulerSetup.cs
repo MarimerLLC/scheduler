@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Scheduler.Core.Email;
@@ -22,7 +23,11 @@ internal static class SchedulerSetup
             sp.GetRequiredService<IOptions<SchedulingOptions>>().Value,
             builder.Environment,
             sp.GetRequiredService<ILogger<MagicLinks>>())));
-        builder.Services.AddDataProtection();
+        // Keys in the database, so sign-in cookies, unsubscribe links and pending email sign-ins survive restarts
+        // and new pods. They are stored unencrypted: anyone who can read the database can already read everything.
+        builder.Services.AddDataProtection()
+            .SetApplicationName("Scheduler")
+            .PersistKeysToDbContext<SchedulerDbContext>();
         builder.Services.AddSingleton<UnsubscribeLinks>();
         builder.Services.AddSingleton<IUnsubscribeLinks>(sp => sp.GetRequiredService<UnsubscribeLinks>());
         builder.Services.AddSingleton(sp => new PlainTextEmailComposer(

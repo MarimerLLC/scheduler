@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Scheduler.Core;
 using Scheduler.Core.Model;
@@ -10,7 +11,7 @@ namespace Scheduler.Data;
 /// <c>Instant</c> to <c>timestamptz</c>, <c>LocalDateTime</c> to <c>timestamp</c>, <c>Duration</c> to <c>interval</c>.
 /// Enums are stored as text so the tables read sensibly in psql.
 /// </summary>
-public sealed class SchedulerDbContext(DbContextOptions<SchedulerDbContext> options) : DbContext(options)
+public sealed class SchedulerDbContext(DbContextOptions<SchedulerDbContext> options) : DbContext(options), IDataProtectionKeyContext
 {
     public DbSet<SchedulingEvent> Events => Set<SchedulingEvent>();
     public DbSet<ProposedSlot> Slots => Set<ProposedSlot>();
@@ -25,6 +26,9 @@ public sealed class SchedulerDbContext(DbContextOptions<SchedulerDbContext> opti
     public DbSet<PersonalAccessToken> PersonalAccessTokens => Set<PersonalAccessToken>();
     public DbSet<EmailVerification> EmailVerifications => Set<EmailVerification>();
     public DbSet<ServerSetting> ServerSettings => Set<ServerSetting>();
+
+    /// <summary>ASP.NET Core Data Protection keys (cookies, unsubscribe links), shared by every replica and restart.</summary>
+    public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 
     protected override void OnModelCreating(ModelBuilder model)
     {

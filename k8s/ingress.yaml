@@ -1,0 +1,24 @@
+# Public through Tailscale Funnel: https://scheduler.tail920062.ts.net. People outside the tailnet open voting links
+# and sign in, and hosted MCP clients (Claude.ai) call /mcp from the internet. Tailscale issues the certificate.
+# The tailnet policy lets tag:k8s-operator use Funnel (lhotkalake-k8s/tailscale/policy.hujson).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: scheduler
+  namespace: scheduler
+  labels:
+    app.kubernetes.io/name: scheduler
+  annotations:
+    tailscale.com/hostname: scheduler
+    tailscale.com/funnel: "true"
+    tailscale.com/tags: tag:k8s-operator
+spec:
+  ingressClassName: tailscale
+  defaultBackend:
+    service:
+      name: scheduler
+      port:
+        number: 80
+  tls:
+    - hosts:
+        - scheduler

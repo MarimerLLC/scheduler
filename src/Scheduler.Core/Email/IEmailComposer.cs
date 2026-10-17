@@ -34,6 +34,9 @@ public interface IEmailComposer
     /// <summary>To the organizer: the deadline passed without a decision, so voting closed.</summary>
     Task<ComposedEmail> DeadlinePassedAsync(SchedulingEvent ev, string dashboardUrl);
 
+    /// <summary>To the organizer: email to a participant couldn't be delivered, so they won't hear about the event.</summary>
+    Task<ComposedEmail> DeliveryProblemAsync(SchedulingEvent ev, string address, string dashboardUrl);
+
     /// <summary>To an address being added to <paramref name="requestedBy"/>'s account: a link to confirm it.</summary>
     Task<ComposedEmail> AddressVerificationAsync(string email, string link, string requestedBy);
 

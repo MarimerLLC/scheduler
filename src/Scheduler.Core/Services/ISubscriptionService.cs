@@ -16,4 +16,10 @@ public interface ISubscriptionService
 
     /// <summary>Undoes an unsubscribe. Bounced and complained addresses stay suppressed.</summary>
     Task ResubscribeAsync(string email, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The address was refused for good while sending email about <paramref name="eventId"/> (if any): suppresses it
+    /// and, the first time, tells that event's organizer (unless the address is the organizer's).
+    /// </summary>
+    Task RecordBounceAsync(string email, Guid? eventId, string reason, CancellationToken cancellationToken);
 }

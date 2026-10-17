@@ -1,0 +1,38 @@
+# Applies pending EF Core migrations before the new version starts. deploy.sh replaces IMAGE_TAG, deletes the
+# previous run and waits for this one to complete. The bundle does nothing when the database is up to date.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: scheduler-migrate
+  namespace: scheduler
+  labels:
+    app.kubernetes.io/name: scheduler
+    app.kubernetes.io/component: migrate
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: scheduler
+        app.kubernetes.io/component: migrate
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1654
+        runAsGroup: 1654
+      containers:
+        - name: migrate
+          image: rockylhotka/scheduler:IMAGE_TAG
+          command: ["/migrate/efbundle"]
+          args: ["--connection", "$(ConnectionStrings__schedulerdb)"]
+          env:
+            - name: ConnectionStrings__schedulerdb
+              valueFrom:
+                secretKeyRef:
+                  name: scheduler-app
+                  key: ConnectionStrings__schedulerdb
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 256Mi }

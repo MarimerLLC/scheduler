@@ -87,6 +87,15 @@ internal sealed class HtmlEmailComposer(
             [nameof(EventEmail.Closing)] = PlainTextEmailComposer.DeadlinePassedClosing(ev),
         });
 
+    public Task<ComposedEmail> DeliveryProblemAsync(SchedulingEvent ev, string address, string dashboardUrl) =>
+        WithEventHtmlAsync(text.DeliveryProblem(ev, address, dashboardUrl), ev.OrganizerEmail, ev, new()
+        {
+            [nameof(EventEmail.Intro)] = PlainTextEmailComposer.DeliveryProblemIntro(ev, address),
+            [nameof(EventEmail.Closing)] = PlainTextEmailComposer.DeliveryProblemClosing,
+            [nameof(EventEmail.ActionUrl)] = dashboardUrl,
+            [nameof(EventEmail.ActionLabel)] = "Open the event",
+        });
+
     public async Task<ComposedEmail> AddressVerificationAsync(string email, string link, string requestedBy)
     {
         var plain = text.AddressVerification(email, link, requestedBy);

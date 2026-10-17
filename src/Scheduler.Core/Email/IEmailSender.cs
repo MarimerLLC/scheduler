@@ -1,5 +1,8 @@
 namespace Scheduler.Core.Email;
 
+/// <summary>The receiving side refused the address for good (an SMTP 5xx to RCPT TO): don't retry, suppress it.</summary>
+public sealed class PermanentDeliveryException(string message, Exception? inner = null) : Exception(message, inner);
+
 /// <summary>One message as handed to the delivery provider.</summary>
 public sealed record OutboundEmail(
     string To,
@@ -10,8 +13,9 @@ public sealed record OutboundEmail(
     string? ListUnsubscribeUrl);
 
 /// <summary>
-/// Outbound delivery. The server never receives mail: bounces and complaints come back from the provider
-/// as webhooks. Implementations: SMTP (Mailpit in development) now; a hosted provider for production.
+/// Outbound delivery: SMTP through a relay in production, Mailpit in development. The server never receives
+/// mail, so only refusals during sending are seen as bounces: an implementation throws
+/// <see cref="PermanentDeliveryException"/> for an address refused for good, and anything else is retried.
 /// </summary>
 public interface IEmailSender
 {

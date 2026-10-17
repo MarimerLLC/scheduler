@@ -30,6 +30,18 @@ public sealed class ProductionConfigurationTests
     }
 
     [TestMethod]
+    public void A_missing_smtp_relay_stops_the_app_from_starting()
+    {
+        using var app = new ProductionApp(
+            Base64Pfx("CN=Test token signing", X509KeyUsageFlags.DigitalSignature),
+            Base64Pfx("CN=Test token encryption", X509KeyUsageFlags.KeyEncipherment),
+            smtpHost: null);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => app.CreateClient());
+        StringAssert.Contains(ex.Message, "Email:Smtp:Host");
+    }
+
+    [TestMethod]
     public void Missing_certificates_stop_the_app_from_starting()
     {
         using var app = new ProductionApp(signingCertificate: null, encryptionCertificate: null);
@@ -48,13 +60,16 @@ public sealed class ProductionConfigurationTests
         return Convert.ToBase64String(certificate.Export(X509ContentType.Pkcs12));
     }
 
-    private sealed class ProductionApp(string? signingCertificate, string? encryptionCertificate) : WebApplicationFactory<Program>
+    private sealed class ProductionApp(string? signingCertificate, string? encryptionCertificate, string? smtpHost = "smtp.example")
+        : WebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Production");
             builder.UseSetting("ConnectionStrings:schedulerdb", PostgresContainer.NewDatabase());
             builder.UseSetting("Scheduler:MagicLinkKey", Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)));
+            if (smtpHost is not null)
+                builder.UseSetting("Email:Smtp:Host", smtpHost);
             if (signingCertificate is not null)
                 builder.UseSetting("Identity:SigningCertificate", signingCertificate);
             if (encryptionCertificate is not null)

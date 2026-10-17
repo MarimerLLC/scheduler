@@ -1,15 +1,23 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using NodaTime;
 using Scheduler.Core;
+using Scheduler.Core.Email;
 using Scheduler.Core.Model;
 using Scheduler.Core.Services;
 
 namespace Scheduler.Data;
 
 /// <summary>EF Core implementation of <see cref="ISubscriptionService"/>. Changes are audited with no event ID.</summary>
-public sealed class SubscriptionService(IDbContextFactory<SchedulerDbContext> dbFactory, IClock clock) : ISubscriptionService
+public sealed class SubscriptionService(
+    IDbContextFactory<SchedulerDbContext> dbFactory,
+    IClock clock,
+    IOptions<SchedulingOptions> options,
+    IEmailComposer composer) : ISubscriptionService
 {
+    private const int ReasonMax = 500;
+
     public async Task<bool> IsSuppressedAsync(string email, CancellationToken cancellationToken)
     {
         var address = EmailAddresses.Normalize(email);
@@ -52,6 +60,42 @@ public sealed class SubscriptionService(IDbContextFactory<SchedulerDbContext> db
         db.Suppressions.Remove(suppression);
         Audit(db, address, "email.resubscribed", clock.GetCurrentInstant());
         await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task RecordBounceAsync(string email, Guid? eventId, string reason, CancellationToken cancellationToken)
+    {
+        var address = EmailAddresses.Normalize(email);
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+        if (await db.Suppressions.AnyAsync(s => s.Email == address, cancellationToken))
+            return;
+
+        var now = clock.GetCurrentInstant();
+        db.Suppressions.Add(new EmailSuppression { Email = address, Reason = SuppressionReason.Bounced, At = now });
+        var detail = reason.Length > ReasonMax ? reason[..ReasonMax] : reason;
+        db.Audit.Add(new AuditEntry
+        {
+            EventId = eventId,
+            At = now,
+            Channel = Channel.Email,
+            Action = "email.bounced",
+            Detail = JsonSerializer.Serialize(new { email = address, reason = detail }),
+        });
+
+        var ev = eventId is null ? null : await db.Events.AsNoTracking().FirstOrDefaultAsync(e => e.Id == eventId, cancellationToken);
+        if (ev is not null && ev.OrganizerEmail != address)
+            SchedulingService.QueueEmail(db, ev, ev.OrganizerEmail,
+                await composer.DeliveryProblemAsync(ev, address, SchedulingService.DashboardUrl(options.Value, ev)), now, replyToOrganizer: false);
+
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            // Suppressed at the same moment by another send; the first one told the organizer.
+            if (!await IsSuppressedAsync(address, cancellationToken))
+                throw;
+        }
     }
 
     private static void Audit(SchedulerDbContext db, string address, string action, Instant now) =>
