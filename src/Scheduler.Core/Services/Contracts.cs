@@ -46,6 +46,10 @@ public enum EventListFilter
     All
 }
 
+/// <summary>
+/// One event in a list. <see cref="Responded"/> and <see cref="Invited"/> are for the organizer only: how many
+/// participants have answered every proposed time, out of how many were invited.
+/// </summary>
 public sealed record EventSummary(
     Guid Id,
     string ShortCode,
@@ -53,7 +57,9 @@ public sealed record EventSummary(
     EventState State,
     bool IsOrganizer,
     bool NeedsMyVote,
-    string? RespondBy);
+    string? RespondBy,
+    int? Responded = null,
+    int? Invited = null);
 
 /// <summary>Per-slot totals. Shown to every participant; who voted what is shown only to the organizer.</summary>
 public sealed record SlotTally(int Preferred, int IfNecessary, int No, int Pending);

@@ -147,7 +147,8 @@ a.button {
 .vote-form { display: flex; flex-direction: column; gap: 0.75rem; max-width: 40rem; }
 .vote-form fieldset.slot { border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem 0.75rem; margin: 0; }
 .vote-form legend { padding: 0 0.25rem; }
-.vote-form legend time { color: var(--muted); margin-left: 0.5rem; }
+.vote-form .viewer-time { display: block; color: var(--muted); font-size: 0.875rem; }
+.vote-form .viewer-time[hidden] { display: none; }
 .vote-form .choices { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; }
 .vote-form .choices label { display: flex; align-items: center; gap: 0.35rem; padding: 0.35rem 0; }
 .vote-form .tally { margin: 0.25rem 0 0; font-size: 0.875rem; }
@@ -156,3 +157,21 @@ a.button {
 .vote-form button[type=submit] { align-self: flex-start; }
 .slot-totals { padding-left: 1.25rem; }
 .slot-totals time { color: var(--muted); margin: 0 0.5rem; }
+
+/* Organizer pages (/events, /events/new, /events/{id}) */
+.page-heading { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.page-heading h1 { margin-right: auto; }
+.state { font-size: 0.8rem; padding: 0.1rem 0.5rem; border-radius: 999px; border: 1px solid var(--border); white-space: nowrap; }
+.state-open { border-color: var(--accent); color: var(--accent); }
+.state-finalized { border-color: #1a7f37; color: #1a7f37; }
+.state-cancelled, .state-expired { color: var(--muted); }
+.event-list { padding-left: 1.25rem; }
+.event-list li { margin: 0.25rem 0; }
+.event-list .hint, .event-list .state { margin-left: 0.5rem; }
+.field { display: flex; flex-direction: column; gap: 0.25rem; margin: 0.75rem 0; max-width: 40rem; }
+.field textarea, .compose textarea { font: inherit; padding: 0.4rem; }
+.slot-inputs, .people-inputs { display: flex; flex-direction: column; gap: 0.5rem; align-items: flex-start; margin: 0.5rem 0 1rem; }
+.slot-inputs .row, .people-inputs .row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+table.slots tr.chosen td { font-weight: 600; }
+.person-email { display: block; font-size: 0.875rem; }
+table.slots tr.not-viable td { color: var(--muted); }

@@ -168,7 +168,7 @@ stateDiagram-v2
 
 | From | To | Trigger |
 |---|---|---|
-| Draft | Open | Organizer sends it (MCP `create_event` opens immediately; Draft exists for the web compose flow) |
+| Draft | Open | Organizer sends it (`create_event` and the compose page both open immediately; nothing creates drafts yet, but the state, its transitions and its purge are kept for a save-for-later compose flow) |
 | Draft | Cancelled | Organizer discards it |
 | Open | Finalized | `finalize_event` |
 | Open | Cancelled | `cancel_event` |
@@ -500,9 +500,9 @@ Blazor with per-page render modes.
 |---|---|---|
 | `/` | Static | What this is; how to connect an agent (the `/mcp` URL). |
 | `/e/{shortCode}?t=...` | **Static SSR with plain form posts** | Voting. Opened from email, often on a phone: no long-lived connection, survives flaky networks, works without JavaScript (`app.js` only adds each time in the viewer's own zone). See [Magic links](#magic-links-voters-without-an-account). |
-| `/events` | InteractiveServer | Organizer dashboard: my events, live tallies, ranked recommendation. |
-| `/events/new` | InteractiveServer | Compose an event by hand (creates a Draft, then Open). |
-| `/events/{id}` | InteractiveServer | One event: slots, votes by participant, finalize / propose more / withdraw / cancel. |
+| `/events` | InteractiveServer | Dashboard: what is waiting for my answer, the events I organize with how many have answered (live), events I'm invited to. |
+| `/events/new` | InteractiveServer | Compose an event by hand: times in one zone (the browser's by default), invitees, optional deadline. Sending opens it, like `create_event`. |
+| `/events/{id}` | InteractiveServer | One event, for its organizer: ranked times with tallies, who answered what and their notes (live); pick, withdraw, propose more times or reschedule, cancel. Picking shows what to put in the calendar. Participants get a link to the voting page. |
 | `/account` | InteractiveServer | Verified addresses (add by email link, remove), personal access tokens. |
 | `/signin/email` | Static SSR with a form post | Offers to email a sign-in link to an address the provider didn't verify. |
 | `/verify?t=...` | Static SSR with a form post | Confirms an emailed link: signs in, or adds the address to the signed-in account. |
@@ -512,8 +512,11 @@ Blazor with per-page render modes.
 
 InteractiveServer notes: use `IDbContextFactory`, never a circuit-lived `DbContext`; get identity from
 `AuthenticationStateProvider`, not `IHttpContextAccessor` (which isn't reliable inside a circuit); live
-updates come from an in-process change notifier the service raises after each save. Scaling past one
-replica would need sticky sessions and a backplane for that notifier.
+updates come from an in-process change notifier (`IEventChanges`) the services and jobs raise after each
+save; pages subscribe only once interactive (`RendererInfo.IsInteractive`), not while prerendering. Organizer
+actions pass the version the page shows, so a change made meanwhile by an agent or another tab is refused
+with a message rather than overwritten. Scaling past one replica would need sticky sessions and a backplane
+for that notifier.
 
 ## Email
 
@@ -525,9 +528,9 @@ Outbound only. Nothing parses inbound mail.
 |---|---|---|
 | Invitation | Each participant | Event opened |
 | New times | Participants | `propose_more_slots` |
-| Reminder | Participants who haven't answered every slot | Once, about 24 h before respond-by |
+| Reminder | Participants who haven't answered every slot | Once per deadline, about 24 h before respond-by; lists only the unanswered times |
 | Everyone has responded | Organizer | Last required participant votes |
-| Deadline passed | Organizer | Event expires |
+| Deadline passed | Organizer | Event expires (voting closed; proposing more times reopens it) |
 | It's set | Everyone | Finalized |
 | Cancelled | Everyone invited | Cancelled |
 | Delivery problem | Organizer | A participant's address bounces |
@@ -569,16 +572,17 @@ asked for them, and they are rate limited per address.
 
 ## Background jobs
 
-Hosted services in the web process (single replica in v1):
+Hosted services in the web process (single replica in v1). The rules are in `ISchedulingJobs` (one pass per
+call, safe to repeat, audited as the system); `SchedulingJobRunner` runs them on this schedule:
 
 | Job | Interval | Does |
 |---|---|---|
 | Outbox dispatcher | 15 s | Sends due emails (implemented) |
 | Deadline | 5 min | Expires open events past respond-by; emails the organizer |
-| Reminders | 15 min | One reminder per participant ~24 h before respond-by |
-| Retention purge | Daily | Deletes events closed more than N days ago (default 30), with their slots, participants, votes, audit and outbox rows; deletes drafts untouched for 7 days |
+| Reminders | 15 min | One reminder per participant who hasn't answered every time, once the deadline is within `Scheduler:ReminderLeadHours` (24). Once per deadline: a new deadline gets a new reminder. Not for someone invited after that window opened; they just got the invitation |
+| Retention purge | Daily | Deletes events closed more than `Scheduler:RetentionDays` (30) ago, with their slots, participants, votes, audit and outbox rows; deletes drafts untouched for `Scheduler:DraftRetentionDays` (7) |
 | Identity cleanup | Hourly | Prunes OAuth tokens and authorizations that lapsed over 14 days ago (OpenIddict's pruning); deletes dynamically registered clients with no authorization or token a day after registering, and expired address links (implemented) |
-| tzdb check | On startup | If the tzdb version changed, recompute `Start` for future slots of open events |
+| tzdb check | On startup | If the tzdb version changed (kept in `ServerSettings`), recompute `Start` from local time and zone for every future slot of an event that isn't cancelled; a time the new rules skip moves forward rather than being lost |
 
 ## Administration
 
@@ -739,8 +743,8 @@ Purged with the event. Admin actions (`organizer.added`, `organizer.removed`), t
    metadata documents and dynamic registration), organizer allowlist, personal access tokens, verifying an
    address by email link, rate limits on `/mcp` and voting, purging unused dynamically registered clients.~~
    Done.
-4. **Organizer UI and jobs.** Dashboard with live tallies, compose page, deadline, reminder, purge and
-   tzdb jobs.
+4. ~~**Organizer UI and jobs.** Dashboard with live tallies, compose page, deadline, reminder, purge and
+   tzdb jobs.~~ Done.
 5. **Production.** Email provider and webhooks, DNS, deployment.
 6. **v1.1.** `wait_for_update` as an optional task with a durable task store; RockBot integration (an
    `mcp.json` entry plus handling the invitation emails it already reads through Adjutant); `.ics`

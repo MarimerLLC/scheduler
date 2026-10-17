@@ -66,6 +66,27 @@ internal sealed class HtmlEmailComposer(
             [nameof(EventEmail.Closing)] = $"Or ask your assistant to finalize scheduling event {ev.ShortCode}.",
         });
 
+    public Task<ComposedEmail> ReminderAsync(SchedulingEvent ev, Participant recipient, string votingUrl) =>
+        WithEventHtmlAsync(text.Reminder(ev, recipient, votingUrl), recipient.Email, ev, new()
+        {
+            [nameof(EventEmail.Intro)] = PlainTextEmailComposer.ReminderIntro(ev),
+            [nameof(EventEmail.Slots)] = PlainTextEmailComposer.UnansweredSlots(ev, recipient),
+            [nameof(EventEmail.SlotsHeading)] = "Times you haven't answered",
+            [nameof(EventEmail.ActionUrl)] = votingUrl,
+            [nameof(EventEmail.ActionLabel)] = "Choose the times that work",
+            [nameof(EventEmail.ActionNote)] = PersonalLink,
+            [nameof(EventEmail.McpUrl)] = text.McpUrl,
+        });
+
+    public Task<ComposedEmail> DeadlinePassedAsync(SchedulingEvent ev, string dashboardUrl) =>
+        WithEventHtmlAsync(text.DeadlinePassed(ev, dashboardUrl), ev.OrganizerEmail, ev, new()
+        {
+            [nameof(EventEmail.Intro)] = PlainTextEmailComposer.DeadlinePassedIntro(ev),
+            [nameof(EventEmail.ActionUrl)] = dashboardUrl,
+            [nameof(EventEmail.ActionLabel)] = "See the answers so far",
+            [nameof(EventEmail.Closing)] = PlainTextEmailComposer.DeadlinePassedClosing(ev),
+        });
+
     public async Task<ComposedEmail> AddressVerificationAsync(string email, string link, string requestedBy)
     {
         var plain = text.AddressVerification(email, link, requestedBy);

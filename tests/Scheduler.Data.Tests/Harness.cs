@@ -37,7 +37,9 @@ internal sealed class Harness
         };
         configure?.Invoke(settings);
         var options = Options.Create(settings);
-        Service = new SchedulingService(db, clock, options, links, new PlainTextEmailComposer(BaseUrl + "/mcp"));
+        var composer = new PlainTextEmailComposer(BaseUrl + "/mcp");
+        Service = new SchedulingService(db, clock, options, links, composer, Changes);
+        Jobs = new SchedulingJobs(db, clock, options, links, composer, Changes);
         AdminService = new AdminService(db, clock, options);
         AccessTokens = new AccessTokenService(db, clock);
         Accounts = new AccountService(db, clock, options, new PlainTextEmailComposer(BaseUrl + "/mcp"));
@@ -50,6 +52,10 @@ internal sealed class Harness
     public AdminService AdminService { get; }
     public AccessTokenService AccessTokens { get; }
     public AccountService Accounts { get; }
+    public SchedulingJobs Jobs { get; }
+
+    /// <summary>Records every change the services publish.</summary>
+    public RecordingEventChanges Changes { get; } = new();
 
     public static CallerIdentity Caller(string email) => new(null, [email], Channel.Mcp);
 
@@ -122,6 +128,21 @@ internal sealed class Harness
         await using var db = await Db.CreateDbContextAsync();
         await action(db);
         await db.SaveChangesAsync();
+    }
+
+    internal sealed class RecordingEventChanges : IEventChanges
+    {
+        private readonly EventChanges _inner = new();
+
+        public List<Guid> Published { get; } = [];
+
+        public void Publish(Guid eventId)
+        {
+            Published.Add(eventId);
+            _inner.Publish(eventId);
+        }
+
+        public IDisposable Subscribe(Action<Guid> handler) => _inner.Subscribe(handler);
     }
 
     private sealed class Factory(DbContextOptions<SchedulerDbContext> options) : IDbContextFactory<SchedulerDbContext>

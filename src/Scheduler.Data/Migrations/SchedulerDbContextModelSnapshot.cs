@@ -646,6 +646,25 @@ namespace Scheduler.Data.Migrations
                     b.ToTable("Events");
                 });
 
+            modelBuilder.Entity("Scheduler.Core.Model.ServerSetting", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Instant>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.HasKey("Key");
+
+                    b.ToTable("ServerSettings");
+                });
+
             modelBuilder.Entity("Scheduler.Core.Model.UserAccount", b =>
                 {
                     b.Property<Guid>("Id")
