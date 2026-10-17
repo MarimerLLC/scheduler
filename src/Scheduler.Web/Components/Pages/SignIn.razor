@@ -1,0 +1,49 @@
+@page "/signin"
+@using Microsoft.Extensions.Options
+@using Scheduler.Web.Identity
+@inject IOptions<SchedulerIdentityOptions> IdentityOptions
+@inject IWebHostEnvironment Environment
+
+@* Static: one plain link per provider, each starting that provider's sign-in. MCP clients land here too
+   when the person connecting isn't signed in yet. See docs/design.md, "Identity and authentication". *@
+
+<PageTitle>Sign in</PageTitle>
+
+<h1>Sign in</h1>
+
+@if (!string.IsNullOrWhiteSpace(Error))
+{
+    <p class="message error" role="alert">@Truncate(Error)</p>
+}
+
+<p>Sign in with the account for the address your meeting invitations go to.</p>
+
+@if (IdentityOptions.Value.ConfiguredProviders.Count == 0 && !Environment.IsDevelopment())
+{
+    <p>No sign-in providers are set up on this server yet.</p>
+}
+
+<ul class="sign-in-options">
+    @foreach (var provider in IdentityOptions.Value.ConfiguredProviders)
+    {
+        <li><a class="button" href="@ProviderUrl(provider)" data-enhance-nav="false">Sign in with @provider</a></li>
+    }
+    @if (Environment.IsDevelopment())
+    {
+        <li><a class="button" href="@($"{DevSignIn.SignInPath}?returnUrl={Uri.EscapeDataString(Local)}")" data-enhance-nav="false">Development sign-in (any address)</a></li>
+    }
+</ul>
+
+@code {
+    [SupplyParameterFromQuery] public string? ReturnUrl { get; set; }
+
+    /// <summary>Why the last attempt failed, from the callback.</summary>
+    [SupplyParameterFromQuery] public string? Error { get; set; }
+
+    private string Local => ExternalSignIn.LocalOrRoot(ReturnUrl);
+
+    private string ProviderUrl(string provider) =>
+        $"{ExternalSignIn.SignInPath}/{provider.ToLowerInvariant()}?returnUrl={Uri.EscapeDataString(Local)}";
+
+    private static string Truncate(string text) => text.Length <= 300 ? text : text[..300] + "…";
+}

@@ -255,30 +255,84 @@ with local time as the source of truth.
 ## Identity and authentication
 
 Three ways in, one identity model: a `UserAccount` with one or more verified `UserEmail` addresses.
+Step-by-step setup for a deployment (app registrations, certificates, Kubernetes) is in
+[identity-setup.md](identity-setup.md).
 
 ### Web UI
 
-Cookie authentication with OpenID Connect sign-in through Microsoft (Entra ID and personal Microsoft
-accounts) and Google.
+Cookie authentication (14 days, sliding) with sign-in through Microsoft (Entra ID and personal Microsoft
+accounts, the `common` tenant) and Google, using OpenIddict's client and its web providers. `/signin` lists
+the providers that are configured (`Identity:Microsoft` and `Identity:Google`, each a `ClientId` and
+`ClientSecret`); a provider without both isn't offered. The provider redirects back to
+`/signin/callback/microsoft` or `/signin/callback/google`; register those redirect URIs with each provider.
+The cookie holds the verified address and the display name; `/signout` clears it.
 
 **Gotcha: not every `email` claim is verified.** Google sends `email_verified`. Entra's `email` claim can
-be an unverified, user-editable attribute in some tenants. Only trust an address from Entra when the token
-proves it (e.g. the `xms_edov` claim, or the UPN in a verified domain); otherwise verify it by sending a link.
-Additional addresses are added by email verification link.
+be an unverified, user-editable attribute in some tenants. `ExternalEmail` trusts a Microsoft address only
+from a personal account (tenant `9188040d-6c67-4c5b-b112-36a304b66dad`) or when the token carries
+`xms_edov` (email domain owner verified), which the Entra app registration must add as an optional ID token
+claim. Anything else is refused with a message suggesting Google or a personal account for that address.
+(Not yet: verifying such an address by sending a link, and adding further addresses to an account the same
+way.)
+
+Signing in doesn't create a `UserAccount`; the first `create_event` does, as before. Every caller is
+identified by a verified address, and the service finds the account (and its other addresses) from it.
 
 ### MCP
 
-The `/mcp` endpoint is an OAuth 2.1 protected resource (protected resource metadata at
-`/.well-known/oauth-protected-resource`). MCP clients expect to register themselves with the authorization
-server (dynamic client registration or client ID metadata documents). Entra and Google don't offer that, so
-the app hosts its own authorization server (OpenIddict is the likely choice) that federates the actual
-login to Microsoft and Google. **Prototype this first**: it is the part most likely to take longer than
-planned, and client support for the registration mechanisms should be verified against Claude Desktop,
-VS Code and Claude Code at implementation time.
+The app is both the protected resource and its own authorization server, because MCP clients register
+themselves with the authorization server and Entra and Google don't allow that. The authorization server
+is OpenIddict (EF Core stores in the same database); the actual login is federated to Microsoft and Google
+through the web sign-in above.
 
-**Headless agents** like RockBot can't complete an interactive OAuth login. They use a **personal access
-token**: created in the web UI, tied to one account, shown once, stored hashed, revocable, sent as a
-bearer token from RockBot's `mcp.json`.
+**The flow.** An MCP request without a valid token gets `401` with
+`WWW-Authenticate: Bearer resource_metadata=".../.well-known/oauth-protected-resource/mcp"` (the MCP SDK's
+authentication handler). That document (RFC 9728) names the resource (`https://<host>/mcp`), this server as
+the authorization server, and the one scope, `scheduler`. The client reads
+`/.well-known/oauth-authorization-server` (or `openid-configuration`), registers (below), and opens
+`/connect/authorize` in the browser with PKCE (S256, required) and `resource`. A browser that isn't signed
+in goes to `/signin` and comes back. Then a **consent page** (`/connect/consent`) shows the client's name,
+where its identity comes from, and the host it redirects to, with a warning for localhost redirects, which
+any program on the machine can claim. "Allow" returns a code (with `iss`, RFC 9207) to the client, which
+redeems it at `/connect/token`. Consent is asked on every authorization; that happens only when connecting
+and when a refresh token runs out.
+
+**Client registration**, in the order MCP 2026-07-28 prefers:
+
+- **Client ID metadata documents** (the default for new clients). The `client_id` is an HTTPS URL; on first
+  use the server fetches the JSON document there, checks it (its `client_id` matches the URL exactly, it
+  has a `client_name` and `redirect_uris`, it is a public client with no secret, at most 5 KB) and stores
+  it as an OpenIddict application. It is fetched again when the cached copy is stale: the response's
+  `max-age`, held between 5 minutes and 24 hours (1 hour without one). The fetch follows no redirects and
+  only connects to public IP addresses (checked on the resolved address at connect time), so a crafted
+  `client_id` can't probe the cluster's network. Discovery advertises
+  `client_id_metadata_document_supported`.
+- **Dynamic client registration** (RFC 7591) at `/connect/register`, which MCP now deprecates but older
+  clients use. Rate limited to 10 registrations per address per hour. The client gets a `dcr_...` id; its
+  name is shown on the consent page as unverified.
+
+Either way the client is public (PKCE, no secret; a requested authentication method is replaced with
+`none`), and every redirect URI must be HTTPS or HTTP on a loopback host. A port-less loopback redirect URI
+matches any port (RFC 8252), since native clients pick a free port each time.
+
+**Tokens.** Access tokens last 1 hour; refresh tokens 14 days and rotate on use. `offline_access` is always
+granted, because not every MCP client asks for it and losing the connection every hour is worse. The access
+token's audience is the canonical MCP URI, and a token is only accepted at `/mcp` if its audience matches
+(RFC 8707); a request for any other `resource` is refused with `invalid_target`. Its subject and `email`
+claim are the signed-in address.
+
+**URIs come from the request.** The issuer, the resource and the metadata URLs are built from the
+request's scheme, host and path base, the same way OpenIddict infers its issuer, so they agree in every
+environment without configuration. In production that means the proxy must pass the original scheme
+(forwarded headers) and `AllowedHosts` must name the public host.
+
+**Keys.** `Identity:SigningCertificate` and `Identity:EncryptionCertificate`, each a base64 PKCS#12 with
+its private key, sign and encrypt the tokens. They are required outside Development; Development uses
+OpenIddict's development certificates from the user's certificate store.
+
+**Headless agents** like RockBot can't complete an interactive OAuth login. They will use a **personal
+access token**: created in the web UI, tied to one account, shown once, stored hashed, revocable, sent as a
+bearer token from RockBot's `mcp.json`. (Not yet implemented.)
 
 ### Magic links (voters without an account)
 
@@ -303,12 +357,13 @@ happens to be the organizer's.
 
 In the Development environment only:
 
-- an `X-Dev-Email` header on `/mcp` acts as that address;
-- `/dev/signin` lets the browser sign in as any address (a cookie with that email claim), so the web UI
-  can be built and tried before OIDC exists; `/dev/signout` signs out.
+- an `X-Dev-Email` header on `/mcp` acts as that address, so curl or a local client can skip OAuth;
+- `/dev/signin` lets the browser sign in as any address (a cookie with that email claim). `/signin` links
+  to it, so the whole MCP OAuth flow can be tried without Microsoft or Google credentials;
+- the OAuth endpoints work over plain HTTP, and development certificates sign the tokens.
 
-Neither is mapped or honored anywhere else, and `/mcp` requires authorization outside Development (it
-answers 401 rather than redirecting an MCP client to a sign-in page).
+None of these exist in any other environment. `/mcp` requires a token (or the dev header) everywhere, and
+answers 401 rather than redirecting an MCP client to a sign-in page.
 
 ## MCP surface
 
@@ -554,7 +609,7 @@ Purged with the event. Admin actions (`organizer.added`, `organizer.removed`) ha
 | MCP | `ModelContextProtocol.AspNetCore` 2.2.0, Streamable HTTP, stateless; Tasks extension in v1.1 |
 | Data | EF Core 10, PostgreSQL (Npgsql), NodaTime plugin |
 | Time | NodaTime 3.3 with the bundled tzdb |
-| Auth | Cookie + OIDC (Microsoft, Google); OpenIddict authorization server for MCP; personal access tokens |
+| Auth | Cookie + OpenIddict client (Microsoft, Google); OpenIddict authorization server and token validation for MCP; personal access tokens (planned) |
 | Email | `IEmailSender`: SMTP (Mailpit) in dev, hosted provider in production |
 | Local dev | Aspire 13 AppHost: PostgreSQL (+ pgAdmin), Mailpit |
 | Telemetry | OpenTelemetry via Aspire service defaults |
@@ -575,8 +630,11 @@ Purged with the event. Admin actions (`organizer.added`, `organizer.removed`) ha
 - One container image (`Dockerfile` at the repo root), deployed to the `lhotkalake` cluster in its own
   namespace. One replica in v1.
 - PostgreSQL in-cluster (or managed), connection string `ConnectionStrings__schedulerdb` from a secret.
-- Secrets: `Scheduler:MagicLinkKey`, OIDC client secrets, email provider key and webhook signing secret,
-  OpenIddict signing keys.
+- Secrets: `Scheduler:MagicLinkKey`, `Identity:Microsoft:ClientSecret` and `Identity:Google:ClientSecret`,
+  email provider key and webhook signing secret, `Identity:SigningCertificate` and
+  `Identity:EncryptionCertificate`.
+- Forwarded headers on (`ASPNETCORE_FORWARDEDHEADERS_ENABLED=true`) and `AllowedHosts` set to the public
+  host, because the OAuth issuer and the MCP resource URI are built from the request.
 - **Data Protection keys persisted to the database** (`PersistKeysToDbContext`), so cookies, magic-link
   sessions and unsubscribe tokens survive restarts.
 - Migrations applied by a migration bundle run as a job before rollout, not at app startup. (In
@@ -590,8 +648,10 @@ Purged with the event. Admin actions (`organizer.added`, `organizer.removed`) ha
    Testcontainers PostgreSQL.~~ Done. Notifications use a plain-text composer until item 2.
 2. **Email and voting page.** Templates, invitation/finalize/cancel flows through the outbox, magic-link
    voting page.
-3. **Identity.** Web OIDC sign-in, MCP OAuth (OpenIddict, federated login), personal access tokens,
-   organizer allowlist, rate limits.
+3. **Identity.** ~~Web sign-in (Microsoft, Google), MCP OAuth (OpenIddict, federated login, client ID
+   metadata documents and dynamic registration), organizer allowlist.~~ Done. Still to do: personal access
+   tokens, verifying an address by email link, rate limits on `/mcp` and voting, and purging dynamically
+   registered clients that are never used.
 4. **Organizer UI and jobs.** Dashboard with live tallies, compose page, deadline, reminder, purge and
    tzdb jobs.
 5. **Production.** Email provider and webhooks, DNS, deployment.

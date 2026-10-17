@@ -9,5 +9,6 @@
   <Folder Name="/tests/">
     <Project Path="tests/Scheduler.Core.Tests/Scheduler.Core.Tests.csproj" />
     <Project Path="tests/Scheduler.Data.Tests/Scheduler.Data.Tests.csproj" />
+    <Project Path="tests/Scheduler.Web.Tests/Scheduler.Web.Tests.csproj" />
   </Folder>
 </Solution>

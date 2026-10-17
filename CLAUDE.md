@@ -7,7 +7,7 @@ it when a decision changes.
 ## Build and test
 
 - `dotnet build Scheduler.slnx`
-- `dotnet test Scheduler.slnx` (`Scheduler.Data.Tests` needs Docker for its PostgreSQL container)
+- `dotnet test Scheduler.slnx` (`Scheduler.Data.Tests` and `Scheduler.Web.Tests` need Docker for PostgreSQL)
 - Local run (needs Docker): `dotnet run --project src/Scheduler.AppHost`
 - New migration: `dotnet tool restore`, then
   `dotnet ef migrations add <Name> --project src/Scheduler.Data --startup-project src/Scheduler.Data --output-dir Migrations`
@@ -27,7 +27,11 @@ it when a decision changes.
 - GUID keys are assigned in code; keep `ValueGeneratedNever()` on them or new child rows save as updates.
 - Use `IDbContextFactory<SchedulerDbContext>`, never an injected `DbContext` (Blazor Server circuits are long-lived).
 - Tests: MSTest. Domain rules get unit tests in `tests/Scheduler.Core.Tests`; service behavior gets
-  integration tests in `tests/Scheduler.Data.Tests` (real PostgreSQL, `Harness` sets up the cast and clock).
+  integration tests in `tests/Scheduler.Data.Tests` (real PostgreSQL, `Harness` sets up the cast and clock);
+  sign-in and the MCP OAuth flow are tested through the real app in `tests/Scheduler.Web.Tests` (`SchedulerApp`).
+- Identity: every caller is a verified email address in a claim (`CallerResolver`). Whatever signs people
+  in must only issue verified addresses. The OAuth issuer and MCP resource URI come from the request
+  (`McpResource`), never from configuration.
 
 ## Environment notes
 

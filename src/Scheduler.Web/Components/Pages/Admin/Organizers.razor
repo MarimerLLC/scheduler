@@ -6,7 +6,6 @@
 @using Scheduler.Core.Services
 @using Scheduler.Web.Identity
 @inject IAdminService Admin
-@inject IWebHostEnvironment Environment
 
 @* Interactive: an admin adds and removes entries in place. Every action goes through IAdminService,
    which checks admin rights again, so this page only decides what to show. *@
@@ -21,11 +20,7 @@
 }
 else if (_caller is null)
 {
-    <p>Sign in to manage organizers.</p>
-    @if (Environment.IsDevelopment())
-    {
-        <p><a href="@($"{DevSignIn.SignInPath}?returnUrl=/admin/organizers")" data-enhance-nav="false">Development sign-in</a></p>
-    }
+    <p><a href="@ExternalSignIn.SignInPage("/admin/organizers")" data-enhance-nav="false">Sign in</a> to manage organizers.</p>
 }
 else if (_access is not { IsAdmin: true })
 {

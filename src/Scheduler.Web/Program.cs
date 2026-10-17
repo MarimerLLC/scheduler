@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.Extensions.Options;
 using Scheduler.Core.Email;
 using Scheduler.Web;
@@ -22,24 +21,9 @@ else
     builder.Services.AddSingleton<IEmailSender, LogOnlyEmailSender>();
 builder.Services.AddHostedService<OutboxDispatcher>();
 
-// Browser sign-in is a cookie. Until OIDC (roadmap item 3, docs/design.md "Identity") only Development can
-// issue one, through DevSignIn. /mcp answers 401 instead of redirecting a client to a sign-in page.
-builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
-    .AddCookie(options =>
-    {
-        options.LoginPath = builder.Environment.IsDevelopment() ? DevSignIn.SignInPath : "/signin";
-        options.Cookie.Name = "scheduler.auth";
-        options.Cookie.SameSite = SameSiteMode.Lax;
-        options.Events.OnRedirectToLogin = context =>
-        {
-            if (context.Request.Path.StartsWithSegments("/mcp"))
-                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-            else
-                context.Response.Redirect(context.RedirectUri);
-            return Task.CompletedTask;
-        };
-    });
-builder.Services.AddAuthorization();
+// Browser sign-in (Microsoft, Google), the OAuth authorization server for MCP clients, and bearer tokens on
+// /mcp. See docs/design.md, "Identity and authentication".
+builder.AddSchedulerIdentity();
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddHttpContextAccessor();
 
@@ -65,22 +49,25 @@ if (!app.Environment.IsDevelopment())
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
     app.UseHsts();
 }
-app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
+// Friendly error pages for people, not for the protocol endpoints: an MCP client needs the bare 401 and its
+// WWW-Authenticate header, and OAuth errors have their own bodies.
+app.UseWhen(
+    context => !context.Request.Path.StartsWithSegments("/mcp") && !context.Request.Path.StartsWithSegments("/connect"),
+    branch => branch.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true));
 app.UseHttpsRedirection();
 
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 app.UseAntiforgery();
 
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
-var mcp = app.MapMcp("/mcp");
-if (!app.Environment.IsDevelopment())
-    mcp.RequireAuthorization();
+app.MapMcp(McpResource.Path).RequireAuthorization(IdentitySetup.McpPolicy);
 
-app.MapDevSignIn();
+app.MapSchedulerIdentity();
 app.MapDefaultEndpoints();
 
 await app.RunAsync();

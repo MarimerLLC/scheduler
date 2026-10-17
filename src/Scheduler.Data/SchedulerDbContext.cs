@@ -132,5 +132,9 @@ public sealed class SchedulerDbContext(DbContextOptions<SchedulerDbContext> opti
             e.Property(x => x.Email).HasMaxLength(FieldLimits.EmailMax);
             e.Property(x => x.Reason).HasConversion<string>().HasMaxLength(16);
         });
+
+        // The MCP authorization server's tables: OAuth clients (registered by metadata document or dynamically),
+        // authorizations and tokens. See docs/design.md, "MCP".
+        model.UseOpenIddict();
     }
 }

@@ -8,7 +8,8 @@ votes **preferred**, **if necessary** or **no** on each time, from whichever MCP
 email. The server never reads a calendar: each person's own agent checks their own calendar, and the
 server only ever learns the votes.
 
-See [docs/design.md](docs/design.md) for the full design.
+See [docs/design.md](docs/design.md) for the full design, and
+[docs/identity-setup.md](docs/identity-setup.md) for setting up sign-in on a deployed server.
 
 ## Status
 
@@ -21,11 +22,13 @@ In place and tested:
 - Administration: admins (from configuration) manage who may organize, through admin-only MCP tools or
   the `/admin/organizers` page
 - Email outbox dispatcher and SMTP sender (Mailpit in development), plain-text notifications
+- Sign-in: Microsoft and Google for the browser, and OAuth for MCP clients (this app is its own
+  authorization server, federating to the same providers; clients register with a client ID metadata
+  document or dynamic client registration)
 - Aspire AppHost for local development
 
-Not yet: real sign-in (only the Development header and `/dev/signin` work), the voting and organizer pages, HTML
-email templates and unsubscribe links, and the reminder, deadline and purge jobs. The roadmap is in the
-design doc.
+Not yet: personal access tokens for headless agents, the voting and organizer pages, HTML email templates
+and unsubscribe links, and the reminder, deadline and purge jobs. The roadmap is in the design doc.
 
 ## Layout
 
@@ -38,7 +41,9 @@ design doc.
 | `src/Scheduler.AppHost` | Aspire AppHost for local development (PostgreSQL + Mailpit) |
 | `tests/Scheduler.Core.Tests` | MSTest unit tests for the domain rules |
 | `tests/Scheduler.Data.Tests` | Integration tests for `SchedulingService` against PostgreSQL (Testcontainers) |
+| `tests/Scheduler.Web.Tests` | The MCP OAuth flow end to end with the MCP SDK client, plus the identity rules |
 | `docs/design.md` | Design document |
+| `docs/identity-setup.md` | Operations: Microsoft and Google app registrations, token certificates, Kubernetes settings |
 
 ## Build and test
 
@@ -49,8 +54,8 @@ dotnet build Scheduler.slnx
 dotnet test Scheduler.slnx
 ```
 
-`Scheduler.Data.Tests` needs Docker: it starts a PostgreSQL container and gives each test its own freshly
-migrated database.
+`Scheduler.Data.Tests` and `Scheduler.Web.Tests` need Docker: each starts a PostgreSQL container and gives
+each test its own freshly migrated database.
 
 ## Migrations
 
@@ -74,7 +79,12 @@ dotnet run --project src/Scheduler.AppHost
 The Aspire dashboard links to the web app, pgAdmin and the Mailpit inbox. In Development:
 
 - an MCP client can act as any address without signing in by sending an `X-Dev-Email` header, and the
-  browser can sign in as any address at `/dev/signin` (both ignored in every other environment);
+  browser can sign in as any address at `/dev/signin` (both ignored in every other environment). An MCP
+  client without the header goes through the real OAuth flow, with the development sign-in offered on
+  `/signin`, so connecting Claude Code or VS Code to `http://localhost:<port>/mcp` works locally;
+- Microsoft and Google sign-in appear once `Identity:Microsoft` or `Identity:Google` has a `ClientId` and
+  `ClientSecret` (user secrets), with `/signin/callback/microsoft` or `/signin/callback/google` registered as
+  the redirect URI;
 - anyone may organize (`Scheduler:Organizers` is `["*"]` in `appsettings.Development.json`), and
   `admin@localhost.test` is an admin, so `/admin/organizers` and the admin MCP tools can be tried;
 - voting links use a random key that changes on every restart unless `Scheduler:MagicLinkKey` is set.
