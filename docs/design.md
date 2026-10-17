@@ -563,9 +563,10 @@ asked for them, and they are rate limited per address.
   exponentially (capped at an hour) and marks a row failed after 8 attempts. Suppressed addresses are
   skipped. Single replica; scaling out needs row claiming (`FOR UPDATE SKIP LOCKED`).
 - **Provider**: plain SMTP behind `IEmailSender` (`SmtpEmailSender`, MailKit): any relay allowed to send as the
-  sending domain, configured under `Email:Smtp` and required outside Development; Mailpit in development. A
-  hosted provider's API and webhooks were left out on purpose for v1: SMTP works with any of them, and the
-  volume is small.
+  sending domain, configured under `Email:Smtp` and required outside Development; Mailpit in development.
+  Production uses Brevo's free SMTP relay (300 emails a day, which the expected volume is well under); any
+  other relay is a configuration change. A provider's API and webhooks were left out on purpose for v1: SMTP
+  works with any of them, and the volume is small.
 - **Bounces**: only what the relay says while sending. A recipient refused with a 5xx is a
   `PermanentDeliveryException`: the row fails without retries, the address is suppressed (`Bounced`), it is
   audited (`email.bounced`) and the event's organizer gets a "Delivery problem" email

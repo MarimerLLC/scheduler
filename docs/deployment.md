@@ -10,7 +10,7 @@ How to run Scheduler on the `lhotkalake` cluster. The design and its reasons are
 | Image | `rockylhotka/scheduler:<version>` on Docker Hub, built and pushed locally (`k8s/build.sh`) |
 | Namespace | `scheduler`; manifests in `k8s/`, applied by `k8s/deploy.sh` |
 | Database | `scheduler` on the shared PostgreSQL (`postgres.default.svc.cluster.local`) |
-| Email | sent as `scheduler@sched.marimer.llc` through an SMTP relay |
+| Email | sent as `scheduler@sched.marimer.llc` through an SMTP relay (Brevo's free plan by default) |
 | Replicas | one (the outbox, the jobs and live updates assume it) |
 
 ## 1. Database
@@ -32,12 +32,30 @@ keeps its Data Protection keys there too (sign-in cookies and unsubscribe links 
 ## 2. Email: the relay and DNS for sched.marimer.llc
 
 Scheduler sends plain SMTP (`Email:Smtp`): STARTTLS on 587 by default, `SslOnConnect` for 465. Any relay that
-lets you send as `scheduler@sched.marimer.llc` works. A transactional provider's SMTP endpoint (Postmark, Amazon
-SES, Azure Communication Services, SendGrid, Mailgun) gives the best deliverability; Microsoft 365 or Google
-Workspace SMTP relays also work at this volume.
+lets you send as `scheduler@sched.marimer.llc` works.
 
-1. **Add `sched.marimer.llc` as a sending domain** at the relay. It gives you the DKIM records.
-2. **DNS records** on `sched.marimer.llc`, at the marimer.llc DNS host:
+**Brevo's free plan** is the default here: 300 emails a day with its SMTP relay, enough for this server's volume
+(each invitation, reminder or update is one email per person). If the volume ever outgrows it, any transactional
+provider's SMTP endpoint drops in by changing the `Email__Smtp__*` values (SMTP2GO's free plan is 1,000 a month;
+Postmark, Amazon SES and Azure Communication Services are paid but cheap). Check the free plan's current limits
+on Brevo's pricing page; they change.
+
+With Brevo:
+
+1. Create a free account. Under **Settings → Senders, Domains, IPs → Domains**, add `sched.marimer.llc` and choose
+   **Authenticate this email domain**. Brevo lists the exact records: a `brevo-code` TXT record, DKIM (two
+   CNAMEs, `brevo1._domainkey` and `brevo2._domainkey`, or one TXT), and DMARC. Add them at the marimer.llc DNS host
+   (Brevo can do it for you if it supports that host); the domain shows as authenticated once DNS has
+   propagated, which can take a day.
+2. Under **Senders**, add `scheduler@sched.marimer.llc` (name `Scheduler`).
+3. Under **SMTP & API → SMTP**, generate an **SMTP key** (not an API key). The relay is `smtp-relay.brevo.com`,
+   port 587, STARTTLS; the username is the SMTP login shown on that page. These go in the `scheduler-app` secret
+   (step 3); `k8s/secret.example.yaml` already has the host, port and security mode.
+4. For DMARC, start with `p=none` and a `rua` address you read (Brevo suggests its own report address), then move
+   to `p=quarantine` once the reports show only Brevo sending as the domain.
+
+With another relay, the same three things: authenticate the domain (the relay gives SPF and DKIM records), allow
+the sender address, and create SMTP credentials. The records look like this:
 
    | Name | Type | Value |
    |---|---|---|
@@ -47,7 +65,6 @@ Workspace SMTP relays also work at this volume.
 
    Many relays also want a custom return-path (bounce) domain, e.g. a CNAME `bounces.sched.marimer.llc`; add it if
    asked, so SPF aligns with the From domain.
-3. **Create SMTP credentials** for the app (step 3).
 
 **Bounces.** A recipient the relay refuses while sending (an SMTP 5xx) is suppressed at once, the organizer is
 emailed, and it is audited as `email.bounced`. Bounces that come back later by mail go to the relay's return-path
