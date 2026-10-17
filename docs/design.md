@@ -134,6 +134,7 @@ All tables in PostgreSQL via EF Core 10. Times are NodaTime types, mapped native
 | `UserAccount` | `Id` | A signed-in person. |
 | `OrganizerGrant` | `Pattern` | An admin's grant to organize: an exact address or `*@domain`, with an optional note and who granted it when. |
 | `UserEmail` | `Email` | A verified address owned by one account. An account can have several. |
+| `PersonalAccessToken` | `Id`; unique `TokenHash` | An agent's bearer token for one account: name, SHA-256 of the token, display prefix, created/expires/last-used/revoked times. See [Personal access tokens](#personal-access-tokens). |
 | `AuditEntry` | `Id` (bigint) | Append-only: who did what, when, through which channel. |
 | `OutboxEmail` | `Id` (bigint) | Emails waiting to be sent, written in the same transaction as the change that caused them. |
 | `EmailSuppression` | `Email` | Addresses never to email: unsubscribed, bounced, complained. |
@@ -275,7 +276,7 @@ claim. Anything else is refused with a message suggesting Google or a personal a
 (Not yet: verifying such an address by sending a link, and adding further addresses to an account the same
 way.)
 
-Signing in doesn't create a `UserAccount`; the first `create_event` does, as before. Every caller is
+Signing in doesn't create a `UserAccount`; the first `create_event` or personal access token does. Every caller is
 identified by a verified address, and the service finds the account (and its other addresses) from it.
 
 ### MCP
@@ -330,9 +331,29 @@ environment without configuration. In production that means the proxy must pass 
 its private key, sign and encrypt the tokens. They are required outside Development; Development uses
 OpenIddict's development certificates from the user's certificate store.
 
-**Headless agents** like RockBot can't complete an interactive OAuth login. They will use a **personal
-access token**: created in the web UI, tied to one account, shown once, stored hashed, revocable, sent as a
-bearer token from RockBot's `mcp.json`. (Not yet implemented.)
+### Personal access tokens
+
+**Headless agents** like RockBot can't complete an interactive OAuth login, so they use a personal access
+token instead, sent as `Authorization: Bearer sched_pat_...` on `/mcp` (from RockBot's `mcp.json`
+`headers`).
+
+- **Created on `/account`** by the signed-in person, with a name (up to 60 characters) and a lifetime of
+  30, 90, 180 or 365 days. There are no tokens that never expire. `IAccessTokenService` enforces the rules:
+  only a person signed in on the web can create, list or revoke tokens (`Channel.Web`, no voting link), so
+  a token can't mint more tokens. Each account can have at most 10 active tokens. Creating the first token
+  creates the person's `UserAccount`, as the first `create_event` does.
+- **Shown once.** The token is `sched_pat_` plus 256 random bits in base64url. Only its SHA-256 and the first
+  14 characters (for telling tokens apart) are stored. A plain hash is enough for a random secret this
+  long; a slow password hash would only cost time on every request. The fixed prefix lets the server send
+  the token to the right handler without a lookup, and lets secret scanners spot a leaked one.
+- **Acts as the account**, with all of its verified addresses (`CallerIdentity.UserId` is set), until it
+  expires or is revoked. Every request checks the database, so revoking takes effect immediately. A token
+  that is unknown, expired or revoked gets the same 401 as a missing one.
+- **Last used** is recorded, but at most every 5 minutes, so a busy agent doesn't write on every call.
+- Creating and revoking are audited (`token.created`, `token.revoked`, no event ID); the token itself is
+  never logged.
+- `/mcp`'s bearer scheme sends `sched_pat_...` values to `PersonalAccessTokenHandler` and everything else
+  to OpenIddict's validation.
 
 ### Magic links (voters without an account)
 
@@ -598,7 +619,8 @@ which has that person's mail and calendar tools.
 `AuditEntry` rows record actions such as `event.created`, `vote.cast`, `slot.withdrawn`,
 `event.finalized`, `email.bounced`, with the actor's address (or none, for the system) and the channel
 (`mcp`, `web`, `email`, `system`). Useful for "why was this finalized?" and for debugging agent behavior.
-Purged with the event. Admin actions (`organizer.added`, `organizer.removed`) have no event and are kept.
+Purged with the event. Admin actions (`organizer.added`, `organizer.removed`) and
+token changes (`token.created`, `token.revoked`) have no event and are kept.
 
 ## Technology
 
@@ -649,8 +671,8 @@ Purged with the event. Admin actions (`organizer.added`, `organizer.removed`) ha
 2. **Email and voting page.** Templates, invitation/finalize/cancel flows through the outbox, magic-link
    voting page.
 3. **Identity.** ~~Web sign-in (Microsoft, Google), MCP OAuth (OpenIddict, federated login, client ID
-   metadata documents and dynamic registration), organizer allowlist.~~ Done. Still to do: personal access
-   tokens, verifying an address by email link, rate limits on `/mcp` and voting, and purging dynamically
+   metadata documents and dynamic registration), organizer allowlist.~~ Done. ~~Personal access tokens.~~ Done.
+   Still to do: verifying an address by email link, rate limits on `/mcp` and voting, and purging dynamically
    registered clients that are never used.
 4. **Organizer UI and jobs.** Dashboard with live tallies, compose page, deadline, reminder, purge and
    tzdb jobs.

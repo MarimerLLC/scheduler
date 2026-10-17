@@ -22,6 +22,7 @@ public sealed class SchedulerDbContext(DbContextOptions<SchedulerDbContext> opti
     public DbSet<OutboxEmail> Outbox => Set<OutboxEmail>();
     public DbSet<EmailSuppression> Suppressions => Set<EmailSuppression>();
     public DbSet<OrganizerGrant> OrganizerGrants => Set<OrganizerGrant>();
+    public DbSet<PersonalAccessToken> PersonalAccessTokens => Set<PersonalAccessToken>();
 
     protected override void OnModelCreating(ModelBuilder model)
     {
@@ -131,6 +132,18 @@ public sealed class SchedulerDbContext(DbContextOptions<SchedulerDbContext> opti
             e.HasKey(x => x.Email);
             e.Property(x => x.Email).HasMaxLength(FieldLimits.EmailMax);
             e.Property(x => x.Reason).HasConversion<string>().HasMaxLength(16);
+        });
+
+        model.Entity<PersonalAccessToken>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.Name).HasMaxLength(AccessTokens.NameMax);
+            e.Property(x => x.TokenHash).HasMaxLength(32);
+            e.Property(x => x.Prefix).HasMaxLength(16);
+            e.HasIndex(x => x.TokenHash).IsUnique();
+            e.HasIndex(x => x.UserId);
+            e.HasOne<UserAccount>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
         });
 
         // The MCP authorization server's tables: OAuth clients (registered by metadata document or dynamically),

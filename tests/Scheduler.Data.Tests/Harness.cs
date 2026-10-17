@@ -37,6 +37,7 @@ internal sealed class Harness
         });
         Service = new SchedulingService(db, clock, options, links, new PlainTextEmailComposer(BaseUrl + "/mcp"));
         AdminService = new AdminService(db, clock, options);
+        AccessTokens = new AccessTokenService(db, clock);
     }
 
     public IDbContextFactory<SchedulerDbContext> Db { get; }
@@ -44,6 +45,7 @@ internal sealed class Harness
     public MagicLinks Links { get; }
     public SchedulingService Service { get; }
     public AdminService AdminService { get; }
+    public AccessTokenService AccessTokens { get; }
 
     public static CallerIdentity Caller(string email) => new(null, [email], Channel.Mcp);
 

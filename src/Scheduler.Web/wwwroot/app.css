@@ -82,8 +82,8 @@ code { font-family: ui-monospace, "Cascadia Mono", Consolas, "SF Mono", Menlo, m
 
 main { max-width: 60rem; margin: 0 auto; padding: 1rem; }
 
-/* Organizers admin page */
-.add-organizer {
+/* Forms and lists (organizers, account) */
+.inline-form {
     display: flex;
     flex-wrap: wrap;
     align-items: end;
@@ -91,10 +91,10 @@ main { max-width: 60rem; margin: 0 auto; padding: 1rem; }
     margin: 1rem 0;
 }
 
-.add-organizer label { display: flex; flex-direction: column; gap: 0.25rem; flex: 1 1 14rem; }
+.inline-form label { display: flex; flex-direction: column; gap: 0.25rem; flex: 1 1 14rem; }
 .hint { color: var(--muted); font-weight: normal; }
 
-input, button {
+input, select, button {
     font: inherit;
     color: inherit;
     padding: 0.4rem 0.6rem;
@@ -110,14 +110,15 @@ button.danger { color: var(--danger); border-color: var(--danger); }
 .message { padding: 0.5rem 0.75rem; border-left: 3px solid var(--accent); background: var(--surface); }
 .message.error { border-left-color: var(--danger); }
 
-table.organizers { width: 100%; border-collapse: collapse; }
-table.organizers th, table.organizers td { text-align: left; padding: 0.5rem; border-bottom: 1px solid var(--border); vertical-align: top; }
-table.organizers td:last-child { white-space: nowrap; }
+table.list { width: 100%; border-collapse: collapse; }
+table.list th, table.list td { text-align: left; padding: 0.5rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+table.list td:last-child { white-space: nowrap; }
 
 @media (max-width: 40rem) {
-    table.organizers thead { display: none; }
-    table.organizers tr { display: block; border-bottom: 1px solid var(--border); padding: 0.5rem 0; }
-    table.organizers td { display: block; border: none; padding: 0.15rem 0; }
+    table.list thead { display: none; }
+    table.list tr { display: block; border-bottom: 1px solid var(--border); padding: 0.5rem 0; }
+    table.list td { display: block; border: none; padding: 0.15rem 0; }
+    table.list td[data-label]::before { content: attr(data-label) ": "; color: var(--muted); }
 }
 
 /* Sign-in and consent */
@@ -135,3 +136,8 @@ a.button {
 .consent-details dt { color: var(--muted); }
 .consent-details dd { margin: 0; overflow-wrap: anywhere; }
 .consent-actions { display: flex; gap: 0.75rem; margin-top: 1.25rem; }
+
+/* Account: personal access tokens */
+.new-token { padding: 0.75rem 1rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--surface); margin: 1rem 0; }
+.new-token .token-value { width: 100%; box-sizing: border-box; font-family: ui-monospace, "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace; }
+.new-token pre { overflow-x: auto; }

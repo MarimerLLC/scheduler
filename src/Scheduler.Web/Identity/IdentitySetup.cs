@@ -22,7 +22,10 @@ internal static class IdentitySetup
     /// <summary>The authorization policy on <c>/mcp</c>: a bearer token for this server (or, in Development, the dev header).</summary>
     public const string McpPolicy = "mcp";
 
-    /// <summary>Authenticates with OpenIddict's token validation; challenges with the MCP 401 (resource metadata).</summary>
+    /// <summary>
+    /// Authenticates a personal access token or, for any other bearer value, with OpenIddict's token
+    /// validation; challenges with the MCP 401 (resource metadata).
+    /// </summary>
     private const string McpBearerScheme = "McpBearer";
 
     private static readonly TimeSpan AccessTokenLifetime = TimeSpan.FromHours(1);
@@ -60,10 +63,13 @@ internal static class IdentitySetup
             })
             .AddPolicyScheme(McpBearerScheme, "MCP bearer token", scheme =>
             {
-                scheme.ForwardAuthenticate = OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme;
+                scheme.ForwardDefaultSelector = http => PersonalAccessTokenHandler.IsPersonalAccessToken(http)
+                    ? PersonalAccessTokenHandler.SchemeName
+                    : OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme;
                 scheme.ForwardChallenge = McpAuthenticationDefaults.AuthenticationScheme;
                 scheme.ForwardForbid = McpAuthenticationDefaults.AuthenticationScheme;
-            });
+            })
+            .AddScheme<AuthenticationSchemeOptions, PersonalAccessTokenHandler>(PersonalAccessTokenHandler.SchemeName, null);
         if (development)
             authentication.AddScheme<AuthenticationSchemeOptions, DevEmailHeader>(DevEmailHeader.SchemeName, null);
 
