@@ -1,0 +1,232 @@
+@page "/events/new"
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Components.Authorization
+@using NodaTime
+@using Scheduler.Core
+@using Scheduler.Core.Model
+@using Scheduler.Core.Services
+@using Scheduler.Web.Identity
+@inject ISchedulingService Scheduling
+@inject IAdminService Admin
+@inject IJSRuntime JS
+
+@* Composing an event by hand, the same as an agent's create_event: candidate times in one zone (the browser's,
+   by default), the people to invite, an optional deadline. Sending opens the event and emails the invitations;
+   ISchedulingService checks the organizer allowlist and every field again. See docs/design.md, "Web UI". *@
+
+<PageTitle>New event</PageTitle>
+
+<h1>New event</h1>
+
+@if (_loading)
+{
+    <p>Loading…</p>
+}
+else if (_caller is null)
+{
+    <p><a href="@ExternalSignIn.SignInPage("/events/new")" data-enhance-nav="false">Sign in</a> to schedule a meeting.</p>
+}
+else if (_access is not { CanOrganize: true })
+{
+    <p>
+        You aren't on this server's list of organizers, so you can't create events. Ask its administrator to add you.
+        Anyone invited to an event can still vote.
+    </p>
+}
+else if (_created is not null)
+{
+    <p class="message" role="status">Invitations to <strong>@_created.Title</strong> are on their way to @_created.Participants.Count people.</p>
+    @foreach (var notice in _created.Notices ?? [])
+    {
+        <p class="message">@notice</p>
+    }
+    <p><a href="/events/@_created.Id">Follow the answers</a> · <a href="/events/new" @onclick="Reset" @onclick:preventDefault>Schedule another</a></p>
+}
+else
+{
+    <div class="compose">
+        <label class="field">
+            <span>What's it for?</span>
+            <input @bind="_title" maxlength="@FieldLimits.TitleMax" placeholder="Q4 planning" />
+        </label>
+        <label class="field">
+            <span>Details (optional; everyone invited sees them)</span>
+            <textarea rows="3" maxlength="@FieldLimits.DescriptionMax" @bind="_description"></textarea>
+        </label>
+        <div class="inline-form">
+            <label>
+                <span>Length</span>
+                <select @bind="_duration">
+                    @foreach (var minutes in Durations)
+                    {
+                        <option value="@minutes">@minutes minutes</option>
+                    }
+                </select>
+            </label>
+            <label>
+                <span>Time zone</span>
+                <input list="zones" @bind="_zone" placeholder="America/Chicago" />
+            </label>
+            <label>
+                <span>Your name, as invitees see it</span>
+                <input @bind="_organizerName" maxlength="@FieldLimits.DisplayNameMax" />
+            </label>
+        </div>
+        <datalist id="zones">
+            @foreach (var zone in DateTimeZoneProviders.Tzdb.Ids)
+            {
+                <option value="@zone"></option>
+            }
+        </datalist>
+
+        <h2>Times that work for you</h2>
+        <p class="hint">Propose several; invitees mark every one that works for them. In @(_zone ?? "your time zone").</p>
+        <div class="slot-inputs">
+            @for (var i = 0; i < _slots.Count; i++)
+            {
+                var index = i;
+                <span class="row">
+                    <input type="datetime-local" aria-label="Time @(index + 1)" value="@_slots[index]" @onchange="e => _slots[index] = e.Value?.ToString() ?? string.Empty" />
+                    @if (_slots.Count > 1)
+                    {
+                        <button aria-label="Remove time @(index + 1)" @onclick="() => _slots.RemoveAt(index)">Remove</button>
+                    }
+                </span>
+            }
+            <button @onclick="() => _slots.Add(string.Empty)">Add a time</button>
+        </div>
+
+        <h2>Who to invite</h2>
+        <div class="people-inputs">
+            @for (var i = 0; i < _people.Count; i++)
+            {
+                var person = _people[i];
+                var index = i;
+                <span class="row">
+                    <input type="email" aria-label="Email @(index + 1)" placeholder="pat@example.com" @bind="person.Email" maxlength="@FieldLimits.EmailMax" />
+                    <input aria-label="Name @(index + 1)" placeholder="Name (optional)" @bind="person.Name" maxlength="@FieldLimits.DisplayNameMax" />
+                    <label><input type="checkbox" @bind="person.Optional" /> optional</label>
+                    @if (_people.Count > 1)
+                    {
+                        <button aria-label="Remove person @(index + 1)" @onclick="() => _people.RemoveAt(index)">Remove</button>
+                    }
+                </span>
+            }
+            <button @onclick="() => _people.Add(new Person())">Add a person</button>
+        </div>
+
+        <label class="field">
+            <span>Answer by (optional)</span>
+            <input type="datetime-local" value="@_respondBy" @onchange="e => _respondBy = e.Value?.ToString()" />
+        </label>
+
+        @if (_error is not null)
+        {
+            <p class="message error" role="alert">@_error</p>
+        }
+
+        <button disabled="@_busy" @onclick="SendAsync">Send invitations</button>
+    </div>
+}
+
+@code {
+    private sealed class Person
+    {
+        public string? Email { get; set; }
+        public string? Name { get; set; }
+        public bool Optional { get; set; }
+    }
+
+    private static readonly int[] Durations = [15, 30, 45, 60, 90, 120];
+
+    [CascadingParameter] private Task<AuthenticationState>? AuthenticationState { get; set; }
+
+    private CallerIdentity? _caller;
+    private CallerAccess? _access;
+    private bool _loading = true;
+    private bool _busy;
+    private string? _error;
+    private EventView? _created;
+
+    private string? _title;
+    private string? _description;
+    private int _duration = 30;
+    private string? _zone;
+    private bool _zoneAsked;
+    private string? _organizerName;
+    private string? _respondBy;
+    private readonly List<string> _slots = [string.Empty, string.Empty, string.Empty];
+    private readonly List<Person> _people = [new()];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = AuthenticationState is null ? null : await AuthenticationState;
+        _caller = CallerResolver.FromPrincipal(state?.User, Channel.Web);
+        if (_caller is not null)
+        {
+            _access = await Admin.GetAccessAsync(_caller, CancellationToken.None);
+            var name = state!.User.FindFirst(ClaimTypes.Name)?.Value;
+            _organizerName = string.IsNullOrWhiteSpace(name) || name == _caller.VerifiedEmails[0] ? null : name;
+        }
+        _loading = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // The browser's zone is a good default; the person can change it. Asked once the form is showing, which
+        // can be after the first render (that one may still say "Loading").
+        if (!_zoneAsked && _zone is null && _access is { CanOrganize: true })
+        {
+            _zoneAsked = true;
+            try
+            {
+                _zone = await JS.InvokeAsync<string>("scheduler.timeZone");
+                StateHasChanged();
+            }
+            catch (JSException)
+            {
+            }
+        }
+    }
+
+    private async Task SendAsync()
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            var zone = _zone?.Trim() ?? "";
+            var request = new CreateEventRequest(
+                _title ?? "",
+                _description,
+                _duration,
+                zone,
+                _people.Where(p => !string.IsNullOrWhiteSpace(p.Email))
+                    .Select(p => new ParticipantInput(p.Email!, p.Name, p.Optional ? AttendeeRole.Optional : AttendeeRole.Required))
+                    .ToList(),
+                _slots.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => new SlotInput(s, zone)).ToList(),
+                string.IsNullOrWhiteSpace(_respondBy) ? null : _respondBy,
+                _organizerName);
+            _created = await Scheduling.CreateEventAsync(_caller!, request, CancellationToken.None);
+        }
+        catch (SchedulingException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void Reset()
+    {
+        _created = null;
+        _title = _description = _respondBy = null;
+        _slots.Clear();
+        _slots.AddRange([string.Empty, string.Empty, string.Empty]);
+        _people.Clear();
+        _people.Add(new Person());
+    }
+}

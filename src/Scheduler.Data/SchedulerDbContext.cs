@@ -24,6 +24,7 @@ public sealed class SchedulerDbContext(DbContextOptions<SchedulerDbContext> opti
     public DbSet<OrganizerGrant> OrganizerGrants => Set<OrganizerGrant>();
     public DbSet<PersonalAccessToken> PersonalAccessTokens => Set<PersonalAccessToken>();
     public DbSet<EmailVerification> EmailVerifications => Set<EmailVerification>();
+    public DbSet<ServerSetting> ServerSettings => Set<ServerSetting>();
 
     protected override void OnModelCreating(ModelBuilder model)
     {
@@ -161,6 +162,13 @@ public sealed class SchedulerDbContext(DbContextOptions<SchedulerDbContext> opti
             e.HasIndex(x => new { x.UserId, x.CreatedAt });
             e.HasIndex(x => x.ExpiresAt);
             e.HasOne<UserAccount>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        model.Entity<ServerSetting>(e =>
+        {
+            e.HasKey(x => x.Key);
+            e.Property(x => x.Key).HasMaxLength(64);
+            e.Property(x => x.Value).HasMaxLength(256);
         });
 
         // The MCP authorization server's tables: OAuth clients (registered by metadata document or dynamically),

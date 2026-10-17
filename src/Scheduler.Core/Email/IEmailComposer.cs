@@ -28,6 +28,12 @@ public interface IEmailComposer
     /// <summary>To the organizer: every required participant has answered every slot.</summary>
     Task<ComposedEmail> AllRespondedAsync(SchedulingEvent ev, string dashboardUrl);
 
+    /// <summary>To a participant who hasn't answered every time, about a day before the deadline.</summary>
+    Task<ComposedEmail> ReminderAsync(SchedulingEvent ev, Participant recipient, string votingUrl);
+
+    /// <summary>To the organizer: the deadline passed without a decision, so voting closed.</summary>
+    Task<ComposedEmail> DeadlinePassedAsync(SchedulingEvent ev, string dashboardUrl);
+
     /// <summary>To an address being added to <paramref name="requestedBy"/>'s account: a link to confirm it.</summary>
     Task<ComposedEmail> AddressVerificationAsync(string email, string link, string requestedBy);
 

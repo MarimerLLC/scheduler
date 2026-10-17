@@ -1,11 +1,158 @@
 @page "/events"
 @rendermode InteractiveServer
+@implements IDisposable
+@using Microsoft.AspNetCore.Components.Authorization
+@using Scheduler.Core.Model
+@using Scheduler.Core.Services
+@using Scheduler.Web.Identity
+@inject ISchedulingService Scheduling
+@inject IAdminService Admin
+@inject IEventChanges Changes
 
-@* The organizer's dashboard. Interactive so the tally updates live when a vote arrives over MCP.
+@* The dashboard: what's waiting for the person's answer, and the events they organize with how many people have
+   answered. Interactive so it updates live when a vote or a change arrives (IEventChanges), from MCP or the web.
    See docs/design.md, "Web UI". *@
 
 <PageTitle>My events</PageTitle>
 
-<h1>My events</h1>
+<div class="page-heading">
+    <h1>My events</h1>
+    @if (_access is { CanOrganize: true })
+    {
+        <a class="button" href="/events/new">New event</a>
+    }
+</div>
 
-<p>The organizer dashboard isn't implemented yet. It needs sign-in first.</p>
+@if (_loading)
+{
+    <p>Loading…</p>
+}
+else if (_caller is null)
+{
+    <p><a href="@ExternalSignIn.SignInPage("/events")" data-enhance-nav="false">Sign in</a> to see your scheduling events.</p>
+}
+else
+{
+    <h2>Waiting for your answer</h2>
+    @if (_needsVote.Count == 0)
+    {
+        <p class="hint">Nothing is waiting for you.</p>
+    }
+    else
+    {
+        <ul class="event-list">
+            @foreach (var ev in _needsVote)
+            {
+                <li>
+                    <a href="/e/@ev.ShortCode" data-enhance-nav="false">@ev.Title</a>
+                    @if (ev.RespondBy is not null)
+                    {
+                        <span class="hint">answer by @ev.RespondBy</span>
+                    }
+                </li>
+            }
+        </ul>
+    }
+
+    <h2>Organizing</h2>
+    @if (_organizing.Count == 0)
+    {
+        <p class="hint">
+            You don't organize any events@(_access is { CanOrganize: true } ? "" : ", and this server's administrator hasn't added you as an organizer").
+        </p>
+    }
+    else
+    {
+        <table class="list">
+            <thead>
+                <tr><th>Event</th><th>Status</th><th>Answered</th><th>Deadline</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var ev in _organizing)
+                {
+                    <tr>
+                        <td><a href="/events/@ev.Id">@ev.Title</a> <code class="hint">@ev.ShortCode</code></td>
+                        <td data-label="Status"><span class="state state-@ev.State.ToString().ToLowerInvariant()">@StateLabel(ev.State)</span></td>
+                        <td data-label="Answered">@ev.Responded of @ev.Invited</td>
+                        <td data-label="Deadline">@(ev.RespondBy ?? "none")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    @if (_invited.Count > 0)
+    {
+        <h2>Invited</h2>
+        <ul class="event-list">
+            @foreach (var ev in _invited)
+            {
+                <li>
+                    <a href="/e/@ev.ShortCode" data-enhance-nav="false">@ev.Title</a>
+                    <span class="state state-@ev.State.ToString().ToLowerInvariant()">@StateLabel(ev.State)</span>
+                </li>
+            }
+        </ul>
+    }
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthenticationState { get; set; }
+
+    private CallerIdentity? _caller;
+    private CallerAccess? _access;
+    private IReadOnlyList<EventSummary> _needsVote = [];
+    private IReadOnlyList<EventSummary> _organizing = [];
+    private IReadOnlyList<EventSummary> _invited = [];
+    private HashSet<Guid> _shown = [];
+    private bool _loading = true;
+    private IDisposable? _subscription;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = AuthenticationState is null ? null : await AuthenticationState;
+        _caller = CallerResolver.FromPrincipal(state?.User, Channel.Web);
+        if (_caller is not null)
+        {
+            _access = await Admin.GetAccessAsync(_caller, CancellationToken.None);
+            await LoadAsync();
+        }
+        _loading = false;
+        Subscribe();
+    }
+
+    /// <summary>Only once interactive: the prerendered copy of the page never updates.</summary>
+    private void Subscribe()
+    {
+        if (RendererInfo.IsInteractive && _caller is not null)
+            _subscription = Changes.Subscribe(eventId =>
+            {
+                if (_shown.Contains(eventId))
+                    _ = InvokeAsync(async () =>
+                    {
+                        await LoadAsync();
+                        StateHasChanged();
+                    });
+            });
+    }
+
+    private async Task LoadAsync()
+    {
+        var events = await Scheduling.ListMyEventsAsync(_caller!, EventListFilter.All, CancellationToken.None);
+        _needsVote = events.Where(e => e.NeedsMyVote).ToList();
+        _organizing = events.Where(e => e.IsOrganizer).ToList();
+        _invited = events.Where(e => !e.IsOrganizer && !e.NeedsMyVote).ToList();
+        _shown = events.Select(e => e.Id).ToHashSet();
+    }
+
+    public static string StateLabel(EventState state) => state switch
+    {
+        EventState.Open => "Voting",
+        EventState.Finalized => "Set",
+        EventState.Cancelled => "Cancelled",
+        EventState.Expired => "Closed (deadline passed)",
+        _ => "Draft",
+    };
+
+    public void Dispose() => _subscription?.Dispose();
+}

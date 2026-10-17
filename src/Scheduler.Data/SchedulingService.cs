@@ -22,7 +22,8 @@ public sealed class SchedulingService(
     IClock clock,
     IOptions<SchedulingOptions> options,
     MagicLinks magicLinks,
-    IEmailComposer composer) : ISchedulingService
+    IEmailComposer composer,
+    IEventChanges changes) : ISchedulingService
 {
     private const int CalendarUidMax = 512;
     private const int ListLimit = 100;
@@ -73,7 +74,7 @@ public sealed class SchedulingService(
             QueueEmail(db, ev, participant.Email, await composer.InvitationAsync(ev, participant, VotingUrl(ev, participant)), now);
         Audit(db, ev, caller, "event.created", new { slots = ev.Slots.Count, participants = ev.Participants.Count }, now);
 
-        await SaveAsync(db, cancellationToken);
+        await SaveAsync(db, ev, cancellationToken);
         return ToView(ev, caller, account, viewerTimeZone: null, notices);
     }
 
@@ -133,7 +134,9 @@ public sealed class SchedulingService(
                 e.State,
                 IsOrganizer: e.OrganizerId == accountId,
                 NeedsMyVote: NeedsVote(e, emails),
-                e.RespondBy is { } by ? SlotTimeFormatter.Display(by, e.OrganizerTimeZone) : null))
+                e.RespondBy is { } by ? SlotTimeFormatter.Display(by, e.OrganizerTimeZone) : null,
+                Responded: e.OrganizerId == accountId ? e.Participants.Count(p => p.RespondedAt is not null) : null,
+                Invited: e.OrganizerId == accountId ? e.Participants.Count : null))
             .Where(s => filter != EventListFilter.NeedsMyVote || s.NeedsMyVote)
             .OrderByDescending(s => s.NeedsMyVote)
             .ToList();
@@ -206,7 +209,7 @@ public sealed class SchedulingService(
         if (!everyoneHadResponded && EveryoneResponded(ev))
             QueueEmail(db, ev, ev.OrganizerEmail, await composer.AllRespondedAsync(ev, DashboardUrl(ev)), now, replyToOrganizer: false);
 
-        await SaveAsync(db, cancellationToken);
+        await SaveAsync(db, ev, cancellationToken);
         return ToView(ev, caller, account, viewerTimeZone: null, notices: null);
     }
 
@@ -251,7 +254,7 @@ public sealed class SchedulingService(
                 QueueEmail(db, ev, participant.Email, await composer.NewSlotsAsync(ev, participant, VotingUrl(ev, participant), added, rescheduling), now);
         }
 
-        await SaveAsync(db, cancellationToken);
+        await SaveAsync(db, ev, cancellationToken);
         return ToView(ev, caller, account, viewerTimeZone: null, notices);
     }
 
@@ -284,7 +287,7 @@ public sealed class SchedulingService(
         Touch(db, ev, now);
         Audit(db, ev, caller, "slot.withdrawn", new { slotId }, now);
 
-        await SaveAsync(db, cancellationToken);
+        await SaveAsync(db, ev, cancellationToken);
         return ToView(ev, caller, account, viewerTimeZone: null, notices: null);
     }
 
@@ -305,7 +308,7 @@ public sealed class SchedulingService(
         foreach (var participant in ev.Participants)
             QueueEmail(db, ev, participant.Email, await composer.FinalizedAsync(ev, participant, slot), now);
 
-        await SaveAsync(db, cancellationToken);
+        await SaveAsync(db, ev, cancellationToken);
         return new FinalizeResult(
             ToView(ev, caller, account, viewerTimeZone: null, notices: null),
             SlotTimeFormatter.IsoLocalTime(slot.LocalStart),
@@ -334,7 +337,7 @@ public sealed class SchedulingService(
                 QueueEmail(db, ev, participant.Email, await composer.CancelledAsync(ev, participant, reasonText), now);
         }
 
-        await SaveAsync(db, cancellationToken);
+        await SaveAsync(db, ev, cancellationToken);
         return ToView(ev, caller, account, viewerTimeZone: null, notices: null);
     }
 
@@ -353,7 +356,7 @@ public sealed class SchedulingService(
         Touch(db, ev, now);
         Audit(db, ev, caller, "calendar.recorded", new { uid = ev.CalendarEventUid }, now);
 
-        await SaveAsync(db, cancellationToken);
+        await SaveAsync(db, ev, cancellationToken);
     }
 
     // ── Identity and access ─────────────────────────────────────────────────
@@ -460,7 +463,7 @@ public sealed class SchedulingService(
 
     // ── Loading and saving ──────────────────────────────────────────────────
 
-    private static IQueryable<SchedulingEvent> EventsWithDetails(SchedulerDbContext db) =>
+    internal static IQueryable<SchedulingEvent> EventsWithDetails(SchedulerDbContext db) =>
         db.Events
             .Include(e => e.Slots)
             .Include(e => e.Participants).ThenInclude(p => p.Votes)
@@ -508,7 +511,8 @@ public sealed class SchedulingService(
     private static SchedulingConflictException StaleVersion() =>
         new("This event changed since you last read it. Call get_event again and retry with its new version.");
 
-    private static async Task SaveAsync(SchedulerDbContext db, CancellationToken cancellationToken)
+    /// <summary>Saves an event's changes, then tells open pages about them.</summary>
+    private async Task SaveAsync(SchedulerDbContext db, SchedulingEvent ev, CancellationToken cancellationToken)
     {
         try
         {
@@ -518,6 +522,7 @@ public sealed class SchedulingService(
         {
             throw StaleVersion();
         }
+        changes.Publish(ev.Id);
     }
 
     private static async Task<string> NewShortCodeAsync(SchedulerDbContext db, CancellationToken cancellationToken)
@@ -659,12 +664,16 @@ public sealed class SchedulingService(
 
     // ── Side effects ────────────────────────────────────────────────────────
 
-    private string VotingUrl(SchedulingEvent ev, Participant participant) =>
-        $"{Options.PublicBaseUrl.TrimEnd('/')}/e/{ev.ShortCode}?t={magicLinks.CreateToken(participant.Id, participant.TokenNonce)}";
+    private string VotingUrl(SchedulingEvent ev, Participant participant) => VotingUrl(Options, magicLinks, ev, participant);
 
-    private string DashboardUrl(SchedulingEvent ev) => $"{Options.PublicBaseUrl.TrimEnd('/')}/events/{ev.Id}";
+    private string DashboardUrl(SchedulingEvent ev) => DashboardUrl(Options, ev);
 
-    private static void QueueEmail(SchedulerDbContext db, SchedulingEvent ev, string to, ComposedEmail email, Instant now, bool replyToOrganizer = true) =>
+    internal static string VotingUrl(SchedulingOptions options, MagicLinks links, SchedulingEvent ev, Participant participant) =>
+        $"{options.PublicBaseUrl.TrimEnd('/')}/e/{ev.ShortCode}?t={links.CreateToken(participant.Id, participant.TokenNonce)}";
+
+    internal static string DashboardUrl(SchedulingOptions options, SchedulingEvent ev) => $"{options.PublicBaseUrl.TrimEnd('/')}/events/{ev.Id}";
+
+    internal static void QueueEmail(SchedulerDbContext db, SchedulingEvent ev, string to, ComposedEmail email, Instant now, bool replyToOrganizer = true) =>
         db.Outbox.Add(new OutboxEmail
         {
             EventId = ev.Id,
@@ -678,7 +687,7 @@ public sealed class SchedulingService(
             NextAttemptAt = now,
         });
 
-    private static void Audit(SchedulerDbContext db, SchedulingEvent ev, CallerIdentity caller, string action, object detail, Instant now) =>
+    internal static void Audit(SchedulerDbContext db, SchedulingEvent ev, CallerIdentity caller, string action, object detail, Instant now) =>
         db.Audit.Add(new AuditEntry
         {
             EventId = ev.Id,

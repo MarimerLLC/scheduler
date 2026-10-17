@@ -20,6 +20,7 @@ if (smtpEndpoint is not null)
 else
     builder.Services.AddSingleton<IEmailSender, LogOnlyEmailSender>();
 builder.Services.AddHostedService<OutboxDispatcher>();
+builder.Services.AddHostedService<SchedulingJobRunner>();
 
 // Browser sign-in (Microsoft, Google), the OAuth authorization server for MCP clients, and bearer tokens on
 // /mcp. See docs/design.md, "Identity and authentication".

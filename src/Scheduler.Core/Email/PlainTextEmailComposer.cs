@@ -68,6 +68,27 @@ public sealed class PlainTextEmailComposer(string mcpUrl, IUnsubscribeLinks? uns
         return EventEmail(ev.OrganizerEmail, Subject(ev, $"Everyone has responded: {ev.Title}"), body);
     }
 
+    public ComposedEmail Reminder(SchedulingEvent ev, Participant recipient, string votingUrl)
+    {
+        var body = new StringBuilder();
+        body.AppendLine(ReminderIntro(ev));
+        AppendEvent(body, ev);
+        var unanswered = UnansweredSlots(ev, recipient);
+        AppendSlots(body, ev, unanswered, "Times you haven't answered:");
+        AppendHowToVote(body, ev, votingUrl);
+        return EventEmail(recipient.Email, Subject(ev, $"Reminder: {ev.Title}{Deadline(ev)}"), body);
+    }
+
+    public ComposedEmail DeadlinePassed(SchedulingEvent ev, string dashboardUrl)
+    {
+        var body = new StringBuilder();
+        body.AppendLine(DeadlinePassedIntro(ev));
+        body.AppendLine();
+        body.AppendLine($"See the answers so far: {dashboardUrl}");
+        body.AppendLine(DeadlinePassedClosing(ev));
+        return EventEmail(ev.OrganizerEmail, Subject(ev, $"Voting closed: {ev.Title}"), body);
+    }
+
     public ComposedEmail AddressVerification(string email, string link, string requestedBy)
     {
         var body = new StringBuilder();
@@ -106,6 +127,12 @@ public sealed class PlainTextEmailComposer(string mcpUrl, IUnsubscribeLinks? uns
     Task<ComposedEmail> IEmailComposer.AllRespondedAsync(SchedulingEvent ev, string dashboardUrl) =>
         Task.FromResult(AllResponded(ev, dashboardUrl));
 
+    Task<ComposedEmail> IEmailComposer.ReminderAsync(SchedulingEvent ev, Participant recipient, string votingUrl) =>
+        Task.FromResult(Reminder(ev, recipient, votingUrl));
+
+    Task<ComposedEmail> IEmailComposer.DeadlinePassedAsync(SchedulingEvent ev, string dashboardUrl) =>
+        Task.FromResult(DeadlinePassed(ev, dashboardUrl));
+
     Task<ComposedEmail> IEmailComposer.AddressVerificationAsync(string email, string link, string requestedBy) =>
         Task.FromResult(AddressVerification(email, link, requestedBy));
 
@@ -125,6 +152,19 @@ public sealed class PlainTextEmailComposer(string mcpUrl, IUnsubscribeLinks? uns
     public static string NewSlotsIntro(SchedulingEvent ev, bool rescheduling) => rescheduling
         ? $"{OrganizerName(ev)} needs to reschedule and has proposed new times."
         : $"{OrganizerName(ev)} has proposed more times.";
+
+    public static string ReminderIntro(SchedulingEvent ev) =>
+        $"{OrganizerName(ev)} is still waiting for your answers about a meeting time, and voting closes soon.";
+
+    public static string DeadlinePassedIntro(SchedulingEvent ev) =>
+        $"The voting deadline for \"{ev.Title}\" passed before you picked a time, so voting has closed.";
+
+    public static string DeadlinePassedClosing(SchedulingEvent ev) =>
+        $"To keep going, propose more times (that reopens voting), or ask your assistant to propose more times for scheduling event {ev.ShortCode}.";
+
+    /// <summary>Active slots the participant hasn't answered, earliest first.</summary>
+    public static IReadOnlyList<ProposedSlot> UnansweredSlots(SchedulingEvent ev, Participant participant) =>
+        ev.ActiveSlots.Where(s => participant.Votes.All(v => v.SlotId != s.Id)).OrderBy(s => s.Start).ToList();
 
     public static string LinkClosing(string ifNotYou) =>
         $"The link works once, for {(int)VerificationLinks.Lifetime.TotalMinutes} minutes. If {ifNotYou}.";
@@ -166,9 +206,9 @@ public sealed class PlainTextEmailComposer(string mcpUrl, IUnsubscribeLinks? uns
         body.AppendLine();
     }
 
-    private static void AppendSlots(StringBuilder body, SchedulingEvent ev, IEnumerable<ProposedSlot> slots)
+    private static void AppendSlots(StringBuilder body, SchedulingEvent ev, IEnumerable<ProposedSlot> slots, string heading = "Proposed times:")
     {
-        body.AppendLine("Proposed times:");
+        body.AppendLine(heading);
         foreach (var slot in slots.OrderBy(s => s.Start))
             body.AppendLine($"  - {SlotTimeFormatter.Display(slot.Start, ev.OrganizerTimeZone)}");
         body.AppendLine();

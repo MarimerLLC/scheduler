@@ -18,6 +18,8 @@ public static class ServiceCollectionExtensions
             options.UseNpgsql(connectionString, npgsql => npgsql.UseNodaTime()));
 
         services.AddSingleton<IClock>(SystemClock.Instance);
+        services.AddSingleton<IEventChanges, EventChanges>();
+        services.AddScoped<ISchedulingJobs, SchedulingJobs>();
         services.AddScoped<ISchedulingService, SchedulingService>();
         services.AddScoped<IAdminService, AdminService>();
         services.AddScoped<IAccessTokenService, AccessTokenService>();

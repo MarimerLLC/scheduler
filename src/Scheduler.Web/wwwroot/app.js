@@ -1,3 +1,6 @@
+// For interactive pages: the browser's IANA time zone, e.g. to default the organizer's zone when composing.
+window.scheduler = { timeZone: () => Intl.DateTimeFormat().resolvedOptions().timeZone };
+
 // Progressive enhancement for static pages: shows each proposed time in the viewer's own zone, next to the
 // organizer's. Pages work without it. Elements: <time datetime="UTC" data-viewer-local data-zone="Organizer/Zone" hidden>.
 (() => {

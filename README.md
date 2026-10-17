@@ -42,7 +42,7 @@ and unsubscribe links, and the reminder, deadline and purge jobs. The roadmap is
 | `src/Scheduler.AppHost` | Aspire AppHost for local development (PostgreSQL + Mailpit) |
 | `tests/Scheduler.Core.Tests` | MSTest unit tests for the domain rules |
 | `tests/Scheduler.Data.Tests` | Integration tests for `SchedulingService` against PostgreSQL (Testcontainers) |
-| `tests/Scheduler.Web.Tests` | The MCP OAuth flow end to end with the MCP SDK client, the voting page, HTML emails and unsubscribing, emailed sign-in and address links, rate limits, plus the identity rules |
+| `tests/Scheduler.Web.Tests` | The MCP OAuth flow end to end with the MCP SDK client, the organizer pages (prerendered), the voting page, HTML emails and unsubscribing, emailed sign-in and address links, rate limits, plus the identity rules |
 | `docs/design.md` | Design document |
 | `docs/identity-setup.md` | Operations: Microsoft and Google app registrations, token certificates, Kubernetes settings |
 

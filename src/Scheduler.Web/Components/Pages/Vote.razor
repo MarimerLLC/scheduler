@@ -88,10 +88,8 @@ else if (_event is not null)
             @foreach (var slot in _event.Slots)
             {
                 <fieldset class="slot">
-                    <legend>
-                        <strong>@slot.OrganizerLocal</strong>
-                        <time datetime="@slot.StartUtc" data-viewer-local data-zone="@_event.OrganizerTimeZone" hidden></time>
-                    </legend>
+                    <legend><strong>@slot.OrganizerLocal</strong></legend>
+                    <time class="viewer-time" datetime="@slot.StartUtc" data-viewer-local data-zone="@_event.OrganizerTimeZone" hidden></time>
                     <div class="choices">
                         @foreach (var (value, label) in Choices)
                         {

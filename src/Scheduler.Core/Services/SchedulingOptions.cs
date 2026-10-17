@@ -24,6 +24,15 @@ public sealed class SchedulingOptions
     /// <summary>Base64 HMAC key for voting links, at least 32 bytes. Rotating it invalidates every link.</summary>
     public string? MagicLinkKey { get; set; }
 
+    /// <summary>Days an event is kept after it is finalized, cancelled or expired. See docs/design.md, "Privacy and retention".</summary>
+    public int RetentionDays { get; set; } = 30;
+
+    /// <summary>Days a draft is kept without changes.</summary>
+    public int DraftRetentionDays { get; set; } = 7;
+
+    /// <summary>Hours before the voting deadline that participants who haven't answered get their one reminder.</summary>
+    public int ReminderLeadHours { get; set; } = 24;
+
     /// <summary>Events one organizer may create in any 24 hours. See docs/design.md, "Abuse prevention".</summary>
     public int MaxEventsPerDay { get; set; } = 20;
 

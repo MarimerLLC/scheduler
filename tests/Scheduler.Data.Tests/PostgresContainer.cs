@@ -33,5 +33,9 @@ public static class PostgresContainer
         new NpgsqlConnectionStringBuilder(_container!.GetConnectionString())
         {
             Database = $"t_{Guid.NewGuid():N}",
+            // Every test has its own database, so its own connection pool. Close idle connections quickly, or
+            // finished tests' pools exhaust the server's connections.
+            ConnectionIdleLifetime = 2,
+            ConnectionPruningInterval = 1,
         }.ConnectionString;
 }
