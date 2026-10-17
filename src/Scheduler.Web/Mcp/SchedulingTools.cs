@@ -71,7 +71,7 @@ public sealed class SchedulingTools(ISchedulingService scheduling, IAdminService
         Run(caller => scheduling.GetEventAsync(caller, eventId, timeZone, cancellationToken));
 
     [McpServerTool(Name = "vote", Title = "Vote on proposed times", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
-    [Description("Records the user's answer for one or more slots. Voting again replaces earlier answers, so retrying is safe. Confirm the answers with the user first.")]
+    [Description("Records the user's answer for one or more slots. Each slot is answered on its own: mark every slot that works as preferred, however many there are. Voting again replaces earlier answers, so retrying is safe. Confirm the answers with the user first.")]
     public Task<string> Vote(
         [Description("The event's id or shortCode.")] string eventId,
         [Description("One entry per slot answered.")] McpVote[] votes,

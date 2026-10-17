@@ -75,6 +75,20 @@ public sealed partial class VotingPageTests
     }
 
     [TestMethod]
+    public async Task A_participant_can_say_every_time_works()
+    {
+        var ev = await CreateEventAsync();
+        var browser = _app.CreateBrowser();
+        await browser.Http.GetAsync(VotingLinkIn((await _app.OutboxAsync()).Single(o => o.To == "bob@example.com")));
+
+        await browser.SubmitFormAsync($"/e/{ev.ShortCode}", [.. ev.Slots.Select(s => (SlotField(s.SlotId), "preferred"))]);
+
+        var votes = await VotesOfAsync("bob@example.com");
+        Assert.HasCount(3, votes!);
+        Assert.IsTrue(votes!.Values.All(v => v == VoteValue.Preferred));
+    }
+
+    [TestMethod]
     public async Task A_bad_link_or_no_link_explains_what_to_do()
     {
         var ev = await CreateEventAsync();

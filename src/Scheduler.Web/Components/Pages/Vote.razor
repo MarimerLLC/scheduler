@@ -78,7 +78,10 @@ else if (_event is not null)
         {
             <p>Please answer by <strong>@_event.RespondBy</strong>.</p>
         }
-        <p class="hint">Answer the times you can; you don't have to answer them all. You can come back and change your answers.</p>
+        <p class="hint">
+            Answer each time on its own: mark every one that works for you, as many as you like. You don't have to
+            answer them all, and you can come back and change your answers.
+        </p>
 
         <form method="post" @formname="vote" @onsubmit="VoteAsync" class="vote-form">
             <AntiforgeryToken />
