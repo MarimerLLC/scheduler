@@ -352,8 +352,11 @@ public sealed class SchedulingService(
             : await db.Users.Include(u => u.Emails).FirstAsync(u => u.Id == ownerId, cancellationToken);
     }
 
-    /// <summary>First event for an allowlisted organizer: an account owning their unclaimed verified addresses.</summary>
-    private static async Task<UserAccount> ProvisionAccountAsync(SchedulerDbContext db, CallerIdentity caller, Instant now, CancellationToken cancellationToken)
+    /// <summary>
+    /// A new account owning the caller's unclaimed verified addresses: on an allowlisted organizer's first event,
+    /// or a person's first personal access token. The caller saves it.
+    /// </summary>
+    internal static async Task<UserAccount> ProvisionAccountAsync(SchedulerDbContext db, CallerIdentity caller, Instant now, CancellationToken cancellationToken)
     {
         var account = new UserAccount { CreatedAt = now };
         var emails = caller.VerifiedEmails.ToList();

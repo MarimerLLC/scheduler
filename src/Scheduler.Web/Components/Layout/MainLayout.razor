@@ -11,7 +11,7 @@
     <span class="account">
         <AuthorizeView>
             <Authorized>
-                @context.User.Identity?.Name
+                <a href="/account">@context.User.Identity?.Name</a>
                 <a href="@ExternalSignIn.SignOutPath" data-enhance-nav="false">Sign out</a>
             </Authorized>
             <NotAuthorized>

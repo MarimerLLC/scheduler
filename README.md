@@ -24,10 +24,11 @@ In place and tested:
 - Email outbox dispatcher and SMTP sender (Mailpit in development), plain-text notifications
 - Sign-in: Microsoft and Google for the browser, and OAuth for MCP clients (this app is its own
   authorization server, federating to the same providers; clients register with a client ID metadata
-  document or dynamic client registration)
+  document or dynamic client registration), plus personal access tokens for headless agents such as
+  RockBot, managed on `/account`
 - Aspire AppHost for local development
 
-Not yet: personal access tokens for headless agents, the voting and organizer pages, HTML email templates
+Not yet: the voting and organizer pages, HTML email templates
 and unsubscribe links, and the reminder, deadline and purge jobs. The roadmap is in the design doc.
 
 ## Layout

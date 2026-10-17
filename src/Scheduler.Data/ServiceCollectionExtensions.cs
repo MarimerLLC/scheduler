@@ -20,6 +20,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IClock>(SystemClock.Instance);
         services.AddScoped<ISchedulingService, SchedulingService>();
         services.AddScoped<IAdminService, AdminService>();
+        services.AddScoped<IAccessTokenService, AccessTokenService>();
         return services;
     }
 }

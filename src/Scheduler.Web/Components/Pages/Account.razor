@@ -1,0 +1,209 @@
+@page "/account"
+@rendermode InteractiveServer
+@using System.Text.Json
+@using Microsoft.AspNetCore.Components.Authorization
+@using Scheduler.Core
+@using Scheduler.Core.Model
+@using Scheduler.Core.Security
+@using Scheduler.Core.Services
+@using Scheduler.Web.Identity
+@inject IAdminService Admin
+@inject IAccessTokenService Tokens
+@inject NavigationManager Navigation
+
+@* Interactive: tokens are created and revoked in place, and a new token is shown once, here. Every action
+   goes through IAccessTokenService, which checks the caller again. See docs/design.md, "Personal access tokens". *@
+
+<PageTitle>Account</PageTitle>
+
+<h1>Account</h1>
+
+@if (_loading)
+{
+    <p>Loading…</p>
+}
+else if (_caller is null)
+{
+    <p><a href="@ExternalSignIn.SignInPage("/account")" data-enhance-nav="false">Sign in</a> to manage your account.</p>
+}
+else
+{
+    <p>
+        Your verified addresses: @string.Join(", ", _access?.Emails ?? []). Invitations to any of them can be
+        answered from this account.
+    </p>
+
+    <h2>Personal access tokens</h2>
+
+    <p>
+        For agents that can't sign in through a browser, such as RockBot or a script. A token acts as you, with
+        all of your addresses, on this server's MCP endpoint (<code>@McpUrl</code>) until it expires or you revoke
+        it. Treat it like a password. Agents that can sign in (Claude, VS Code) don't need one.
+    </p>
+
+    @if (_created is not null)
+    {
+        <section class="new-token" aria-live="polite">
+            <p><strong>Copy your new token now.</strong> It won't be shown again.</p>
+            <input class="token-value" readonly value="@_created.Token" aria-label="New personal access token" onfocus="this.select()" />
+            <p>Send it as a bearer token: <code>Authorization: Bearer @(_created.View.Prefix)…</code></p>
+            <details>
+                <summary>RockBot <code>mcp.json</code> entry</summary>
+                <pre><code>@RockBotEntry(_created.Token)</code></pre>
+            </details>
+            <button @onclick="() => _created = null">Done</button>
+        </section>
+    }
+
+    <EditForm Model="_form" OnSubmit="CreateAsync" class="inline-form">
+        <label>
+            <span>Name</span>
+            <InputText @bind-Value="_form.Name" placeholder="RockBot" maxlength="@AccessTokens.NameMax" />
+        </label>
+        <label>
+            <span>Expires in</span>
+            <InputSelect @bind-Value="_form.ExpiresInDays">
+                @foreach (var days in ExpiryChoices)
+                {
+                    <option value="@days">@days days</option>
+                }
+            </InputSelect>
+        </label>
+        <button type="submit" disabled="@_busy">Create token</button>
+    </EditForm>
+
+    @if (_message is not null)
+    {
+        <p class="@(_isError ? "message error" : "message")" role="status">@_message</p>
+    }
+
+    @if (_tokens.Count == 0)
+    {
+        <p class="hint">You have no tokens.</p>
+    }
+    else
+    {
+        <table class="list">
+            <thead>
+                <tr><th>Name</th><th>Token</th><th>Created</th><th>Last used</th><th>Status</th><th></th></tr>
+            </thead>
+            <tbody>
+                @foreach (var token in _tokens)
+                {
+                    <tr>
+                        <td>@token.Name</td>
+                        <td data-label="Token"><code>@(token.Prefix)…</code></td>
+                        <td data-label="Created">@token.CreatedAt</td>
+                        <td data-label="Last used">@(token.LastUsedAt ?? "never")</td>
+                        <td data-label="Status">@(token.Status == AccessTokenStatus.Active ? $"expires {token.ExpiresAt}" : token.Status == AccessTokenStatus.Expired ? $"expired {token.ExpiresAt}" : "revoked")</td>
+                        <td>
+                            @if (token.Status == AccessTokenStatus.Active)
+                            {
+                                @if (_confirmRevoke == token.Id)
+                                {
+                                    <button class="danger" disabled="@_busy" @onclick="() => RevokeAsync(token)">Confirm revoke</button>
+                                    <button disabled="@_busy" @onclick="() => _confirmRevoke = null">Keep</button>
+                                }
+                                else
+                                {
+                                    <button disabled="@_busy" @onclick="() => _confirmRevoke = token.Id">Revoke</button>
+                                }
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthenticationState { get; set; }
+
+    private sealed class CreateForm
+    {
+        public string? Name { get; set; }
+        public int ExpiresInDays { get; set; } = 90;
+    }
+
+    private static readonly int[] ExpiryChoices = [30, 90, 180, AccessTokens.MaxLifetimeDays];
+
+    private readonly CreateForm _form = new();
+    private CallerIdentity? _caller;
+    private CallerAccess? _access;
+    private IReadOnlyList<AccessTokenView> _tokens = [];
+    private CreatedAccessToken? _created;
+    private bool _loading = true;
+    private bool _busy;
+    private Guid? _confirmRevoke;
+    private string? _message;
+    private bool _isError;
+
+    private string McpUrl => Navigation.ToAbsoluteUri(McpResource.Path).AbsoluteUri;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = AuthenticationState is null ? null : await AuthenticationState;
+        _caller = CallerResolver.FromPrincipal(state?.User, Channel.Web);
+        if (_caller is not null)
+        {
+            _access = await Admin.GetAccessAsync(_caller, CancellationToken.None);
+            _tokens = await Tokens.ListAsync(_caller, CancellationToken.None);
+        }
+        _loading = false;
+    }
+
+    private async Task CreateAsync()
+    {
+        await RunAsync(async () =>
+        {
+            _created = await Tokens.CreateAsync(_caller!, _form.Name ?? "", _form.ExpiresInDays, CancellationToken.None);
+            _form.Name = null;
+            return $"Created \"{_created.View.Name}\". It expires {_created.View.ExpiresAt}.";
+        });
+    }
+
+    private async Task RevokeAsync(AccessTokenView token)
+    {
+        await RunAsync(async () =>
+        {
+            await Tokens.RevokeAsync(_caller!, token.Id, CancellationToken.None);
+            return $"Revoked \"{token.Name}\". Anything still using it is signed out.";
+        });
+    }
+
+    private async Task RunAsync(Func<Task<string>> action)
+    {
+        _busy = true;
+        try
+        {
+            _message = await action();
+            _isError = false;
+            _tokens = await Tokens.ListAsync(_caller!, CancellationToken.None);
+        }
+        catch (SchedulingException ex)
+        {
+            _message = ex.Message;
+            _isError = true;
+        }
+        finally
+        {
+            _busy = false;
+            _confirmRevoke = null;
+        }
+    }
+
+    /// <summary>An entry for RockBot's mcp.json (its MCP bridge sends <c>headers</c> on every request).</summary>
+    private string RockBotEntry(string token) => JsonSerializer.Serialize(
+        new Dictionary<string, object>
+        {
+            ["scheduler"] = new
+            {
+                type = "sse",
+                url = McpUrl,
+                transportMode = "streamable-http",
+                headers = new Dictionary<string, string> { ["Authorization"] = $"Bearer {token}" },
+            },
+        },
+        new JsonSerializerOptions { WriteIndented = true });
+}

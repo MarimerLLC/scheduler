@@ -33,7 +33,7 @@ else
         Removing someone stops them creating new events; events they already organize stay theirs.
     </p>
 
-    <EditForm Model="_form" OnSubmit="AddAsync" class="add-organizer">
+    <EditForm Model="_form" OnSubmit="AddAsync" class="inline-form">
         <label>
             <span>Address or domain</span>
             <InputText @bind-Value="_form.Entry" placeholder="@EntryPlaceholder" maxlength="@OrganizerPatterns.MaxLength" />
@@ -50,7 +50,7 @@ else
         <p class="@(_isError ? "message error" : "message")" role="status">@_message</p>
     }
 
-    <table class="organizers">
+    <table class="list">
         <thead>
             <tr><th>Entry</th><th>Source</th><th>Note</th><th>Added</th><th></th></tr>
         </thead>

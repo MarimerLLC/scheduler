@@ -206,6 +206,39 @@ Then sign in for real:
    The browser opens, you sign in (if you aren't already), and a consent page asks you to allow the client.
    Afterwards, ask the agent to run the `get_my_access` tool. It should report your address.
 
+## 6. Personal access tokens (headless agents)
+
+Agents that can't open a browser, such as RockBot, use a personal access token instead of the OAuth
+sign-in. There is nothing to configure on the server for them.
+
+1. The person who owns the agent signs in and opens `https://sched.example.com/account` (their name in the
+   page header links there).
+2. Under **Personal access tokens**, they name the token (for example `RockBot`), pick a lifetime (30 to 365
+   days) and choose **Create token**. The token (`sched_pat_...`) is shown once, with a ready-made RockBot
+   `mcp.json` entry:
+
+   ```json
+   {
+     "scheduler": {
+       "type": "sse",
+       "url": "https://sched.example.com/mcp",
+       "transportMode": "streamable-http",
+       "headers": { "Authorization": "Bearer sched_pat_..." }
+     }
+   }
+   ```
+
+   Any other client sends the same `Authorization: Bearer` header.
+3. When it expires, or if it leaks, they **Revoke** it on the same page and create a new one. Revoking
+   takes effect on the agent's next request.
+
+A token acts as its owner, with all of their verified addresses. The server stores only a hash of each
+token. Creating and revoking tokens is recorded in the audit log (`token.created`, `token.revoked`).
+
+Check one with curl: `curl -si -X POST https://sched.example.com/mcp -H "Authorization: Bearer sched_pat_..."`.
+An active token gets past authorization (an MCP error about the request body is fine). An expired, revoked
+or mistyped one gets a 401 with the `WWW-Authenticate` header.
+
 ## Troubleshooting
 
 | Symptom | Cause |
@@ -220,5 +253,6 @@ Then sign in for real:
 | App won't start: "Identity:SigningCertificate and Identity:EncryptionCertificate are not configured" | One or both certificate settings are missing or empty. |
 | App won't start: "The specified certificate is not a signing certificate" (or "...encryption certificate") | The certificates are swapped, or created without the key usage in step 3. |
 | An MCP client that worked has to sign in again | Expected after a certificate rotation, or after 14 days without use (the refresh token expired). |
+| An agent using a personal access token suddenly gets 401 | The token expired or was revoked; see its status on `/account` and create a new one. |
 | Everyone signed out of the web pages after a restart | ASP.NET Data Protection keys aren't persisted yet (design doc, Deployment). MCP clients are unaffected. |
 | A Microsoft client secret expired | Sign-in with Microsoft fails at the callback. Create a new secret, update the Kubernetes secret, restart, then delete the old secret in Entra. Set a reminder before the next expiry. |
