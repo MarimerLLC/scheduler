@@ -57,14 +57,14 @@ With Brevo:
 With another relay, the same three things: authenticate the domain (the relay gives SPF and DKIM records), allow
 the sender address, and create SMTP credentials. The records look like this:
 
-   | Name | Type | Value |
-   |---|---|---|
-   | `sched.marimer.llc` | TXT | `v=spf1 include:<the relay's SPF domain> -all` (from the relay's docs) |
-   | `<selector>._domainkey.sched.marimer.llc` | TXT or CNAME | from the relay |
-   | `_dmarc.sched.marimer.llc` | TXT | `v=DMARC1; p=quarantine; rua=mailto:<a mailbox someone reads>` |
+| Name | Type | Value |
+|---|---|---|
+| `sched.marimer.llc` | TXT | `v=spf1 include:<the relay's SPF domain> -all` (from the relay's docs) |
+| `<selector>._domainkey.sched.marimer.llc` | TXT or CNAME | from the relay |
+| `_dmarc.sched.marimer.llc` | TXT | `v=DMARC1; p=quarantine; rua=mailto:<a mailbox someone reads>` |
 
-   Many relays also want a custom return-path (bounce) domain, e.g. a CNAME `bounces.sched.marimer.llc`; add it if
-   asked, so SPF aligns with the From domain.
+Many relays also want a custom return-path (bounce) domain, e.g. a CNAME `bounces.sched.marimer.llc`; add it if
+asked, so SPF aligns with the From domain.
 
 **Bounces.** A recipient the relay refuses while sending (an SMTP 5xx) is suppressed at once, the organizer is
 emailed, and it is audited as `email.bounced`. Bounces that come back later by mail go to the relay's return-path
