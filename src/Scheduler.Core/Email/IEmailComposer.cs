@@ -7,7 +7,7 @@ public sealed record ComposedEmail(string Subject, string TextBody, string? Html
 
 /// <summary>
 /// Writes the notification emails. <paramref name="votingUrl"/> parameters are the recipient's personal
-/// magic link. Every subject starts with <c>[sched:SHORTCODE]</c>. Text from the event (title, description,
+/// magic link. Every subject about an event starts with <c>[sched:SHORTCODE]</c>. Text from the event (title, description,
 /// reason) is someone else's writing and is quoted, never presented as instructions.
 /// </summary>
 public interface IEmailComposer
@@ -22,4 +22,10 @@ public interface IEmailComposer
 
     /// <summary>To the organizer: every required participant has answered every slot.</summary>
     ComposedEmail AllResponded(SchedulingEvent ev, string dashboardUrl);
+
+    /// <summary>To an address being added to <paramref name="requestedBy"/>'s account: a link to confirm it.</summary>
+    ComposedEmail AddressVerification(string email, string link, string requestedBy);
+
+    /// <summary>To an address a sign-in provider didn't verify: a link that finishes signing in.</summary>
+    ComposedEmail SignInLink(string email, string link);
 }
