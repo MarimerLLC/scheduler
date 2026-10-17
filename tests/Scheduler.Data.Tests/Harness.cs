@@ -24,17 +24,19 @@ internal sealed class Harness
     public static readonly CallerIdentity Mallory = Caller("mallory@example.com");
     public static readonly CallerIdentity Admin = Caller("admin@example.com");
 
-    private Harness(IDbContextFactory<SchedulerDbContext> db, FakeClock clock, MagicLinks links)
+    private Harness(IDbContextFactory<SchedulerDbContext> db, FakeClock clock, MagicLinks links, Action<SchedulingOptions>? configure)
     {
         Db = db;
         Clock = clock;
         Links = links;
-        var options = Options.Create(new SchedulingOptions
+        var settings = new SchedulingOptions
         {
             Organizers = ["rocky@example.com", "*@marimer.llc"],
             Admins = ["admin@example.com"],
             PublicBaseUrl = BaseUrl,
-        });
+        };
+        configure?.Invoke(settings);
+        var options = Options.Create(settings);
         Service = new SchedulingService(db, clock, options, links, new PlainTextEmailComposer(BaseUrl + "/mcp"));
         AdminService = new AdminService(db, clock, options);
         AccessTokens = new AccessTokenService(db, clock);
@@ -51,7 +53,8 @@ internal sealed class Harness
 
     public static CallerIdentity Caller(string email) => new(null, [email], Channel.Mcp);
 
-    public static async Task<Harness> CreateAsync()
+    /// <param name="configure">Changes to the options, e.g. lower limits.</param>
+    public static async Task<Harness> CreateAsync(Action<SchedulingOptions>? configure = null)
     {
         var options = new DbContextOptionsBuilder<SchedulerDbContext>()
             .UseNpgsql(PostgresContainer.NewDatabase(), npgsql => npgsql.UseNodaTime())
@@ -61,7 +64,7 @@ internal sealed class Harness
         await using (var db = factory.CreateDbContext())
             await db.Database.MigrateAsync();
 
-        return new Harness(factory, new FakeClock(Instant.FromUtc(2026, 10, 16, 15, 0)), new MagicLinks(MagicLinks.NewKey()));
+        return new Harness(factory, new FakeClock(Instant.FromUtc(2026, 10, 16, 15, 0)), new MagicLinks(MagicLinks.NewKey()), configure);
     }
 
     /// <summary>
