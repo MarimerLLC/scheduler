@@ -8,7 +8,8 @@ votes **preferred**, **if necessary** or **no** on each time, from whichever MCP
 email. The server never reads a calendar: each person's own agent checks their own calendar, and the
 server only ever learns the votes.
 
-See [docs/design.md](docs/design.md) for the full design.
+See [docs/design.md](docs/design.md) for the full design, and
+[docs/identity-setup.md](docs/identity-setup.md) for setting up sign-in on a deployed server.
 
 ## Status
 
@@ -42,6 +43,7 @@ and unsubscribe links, and the reminder, deadline and purge jobs. The roadmap is
 | `tests/Scheduler.Data.Tests` | Integration tests for `SchedulingService` against PostgreSQL (Testcontainers) |
 | `tests/Scheduler.Web.Tests` | The MCP OAuth flow end to end with the MCP SDK client, plus the identity rules |
 | `docs/design.md` | Design document |
+| `docs/identity-setup.md` | Operations: Microsoft and Google app registrations, token certificates, Kubernetes settings |
 
 ## Build and test
 

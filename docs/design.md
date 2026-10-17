@@ -255,6 +255,8 @@ with local time as the source of truth.
 ## Identity and authentication
 
 Three ways in, one identity model: a `UserAccount` with one or more verified `UserEmail` addresses.
+Step-by-step setup for a deployment (app registrations, certificates, Kubernetes) is in
+[identity-setup.md](identity-setup.md).
 
 ### Web UI
 
