@@ -4,12 +4,13 @@ using Scheduler.Core.Email;
 using Scheduler.Core.Security;
 using Scheduler.Core.Services;
 using Scheduler.Data;
+using Scheduler.Web.Email;
 
 namespace Scheduler.Web;
 
 internal static class SchedulerSetup
 {
-    /// <summary>Scheduling options, voting-link signing, the email composer, and the database.</summary>
+    /// <summary>Scheduling options, voting-link signing, the email composer and unsubscribe links, and the database.</summary>
     public static void AddScheduler(this WebApplicationBuilder builder)
     {
         var connectionString = builder.Configuration.GetConnectionString("schedulerdb")
@@ -21,8 +22,13 @@ internal static class SchedulerSetup
             sp.GetRequiredService<IOptions<SchedulingOptions>>().Value,
             builder.Environment,
             sp.GetRequiredService<ILogger<MagicLinks>>())));
-        builder.Services.AddSingleton<IEmailComposer>(sp => new PlainTextEmailComposer(
-            sp.GetRequiredService<IOptions<SchedulingOptions>>().Value.PublicBaseUrl.TrimEnd('/') + "/mcp"));
+        builder.Services.AddDataProtection();
+        builder.Services.AddSingleton<UnsubscribeLinks>();
+        builder.Services.AddSingleton<IUnsubscribeLinks>(sp => sp.GetRequiredService<UnsubscribeLinks>());
+        builder.Services.AddSingleton(sp => new PlainTextEmailComposer(
+            sp.GetRequiredService<IOptions<SchedulingOptions>>().Value.PublicBaseUrl.TrimEnd('/') + "/mcp",
+            sp.GetRequiredService<IUnsubscribeLinks>()));
+        builder.Services.AddSingleton<IEmailComposer, HtmlEmailComposer>();
     }
 
     /// <summary>

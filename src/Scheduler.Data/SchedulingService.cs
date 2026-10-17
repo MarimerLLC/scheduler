@@ -65,15 +65,41 @@ public sealed class SchedulingService(
         ev.RespondBy = ParseRespondBy(request.RespondBy, ev, now);
         AddParticipants(ev, request.Participants, OwnEmails(caller, account), now, notices);
         await EnforceOrganizerLimitsAsync(db, account, ev.Participants.Count, now, cancellationToken);
+        await AddSuppressionNoticesAsync(db, ev, notices, cancellationToken);
         ev.Open();
 
         db.Events.Add(ev);
         foreach (var participant in ev.Participants)
-            QueueEmail(db, ev, participant.Email, composer.Invitation(ev, participant, VotingUrl(ev, participant)), now);
+            QueueEmail(db, ev, participant.Email, await composer.InvitationAsync(ev, participant, VotingUrl(ev, participant)), now);
         Audit(db, ev, caller, "event.created", new { slots = ev.Slots.Count, participants = ev.Participants.Count }, now);
 
         await SaveAsync(db, cancellationToken);
         return ToView(ev, caller, account, viewerTimeZone: null, notices);
+    }
+
+    public async Task<CallerIdentity?> ResolveVotingLinkAsync(string eventRef, string token, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrEmpty(token) || string.IsNullOrWhiteSpace(eventRef))
+            return null;
+
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+        var code = Tokens.NormalizeShortCode(eventRef);
+        var events = Guid.TryParse(eventRef.Trim(), out var id)
+            ? db.Events.Where(e => e.Id == id)
+            : db.Events.Where(e => e.ShortCode == code);
+        var participants = await db.Participants.AsNoTracking()
+            .Where(p => events.Any(e => e.Id == p.EventId))
+            .Select(p => new { p.Id, p.EventId, p.Email, p.TokenNonce })
+            .ToListAsync(cancellationToken);
+
+        // Every participant is checked, so the time taken doesn't say which one (if any) matched.
+        CallerIdentity? caller = null;
+        foreach (var participant in participants)
+        {
+            if (magicLinks.Matches(token, participant.Id, participant.TokenNonce))
+                caller = new CallerIdentity(null, [participant.Email], Channel.Web, MagicLinkEventId: participant.EventId);
+        }
+        return caller;
     }
 
     public async Task<IReadOnlyList<EventSummary>> ListMyEventsAsync(CallerIdentity caller, EventListFilter filter, CancellationToken cancellationToken)
@@ -178,7 +204,7 @@ public sealed class SchedulingService(
 
         Audit(db, ev, caller, "vote.cast", new { slots = votes.Count }, now);
         if (!everyoneHadResponded && EveryoneResponded(ev))
-            QueueEmail(db, ev, ev.OrganizerEmail, composer.AllResponded(ev, DashboardUrl(ev)), now, replyToOrganizer: false);
+            QueueEmail(db, ev, ev.OrganizerEmail, await composer.AllRespondedAsync(ev, DashboardUrl(ev)), now, replyToOrganizer: false);
 
         await SaveAsync(db, cancellationToken);
         return ToView(ev, caller, account, viewerTimeZone: null, notices: null);
@@ -222,7 +248,7 @@ public sealed class SchedulingService(
         if (ev.State == EventState.Open)
         {
             foreach (var participant in ev.Participants)
-                QueueEmail(db, ev, participant.Email, composer.NewSlots(ev, participant, VotingUrl(ev, participant), added, rescheduling), now);
+                QueueEmail(db, ev, participant.Email, await composer.NewSlotsAsync(ev, participant, VotingUrl(ev, participant), added, rescheduling), now);
         }
 
         await SaveAsync(db, cancellationToken);
@@ -277,7 +303,7 @@ public sealed class SchedulingService(
 
         Audit(db, ev, caller, "event.finalized", new { slotId }, now);
         foreach (var participant in ev.Participants)
-            QueueEmail(db, ev, participant.Email, composer.Finalized(ev, participant, slot), now);
+            QueueEmail(db, ev, participant.Email, await composer.FinalizedAsync(ev, participant, slot), now);
 
         await SaveAsync(db, cancellationToken);
         return new FinalizeResult(
@@ -305,7 +331,7 @@ public sealed class SchedulingService(
         if (participantsWereNotified)
         {
             foreach (var participant in ev.Participants)
-                QueueEmail(db, ev, participant.Email, composer.Cancelled(ev, participant, reasonText), now);
+                QueueEmail(db, ev, participant.Email, await composer.CancelledAsync(ev, participant, reasonText), now);
         }
 
         await SaveAsync(db, cancellationToken);
@@ -366,6 +392,20 @@ public sealed class SchedulingService(
             account.Emails.Add(new UserEmail { Email = email, UserId = account.Id, VerifiedAt = now });
         db.Users.Add(account);
         return account;
+    }
+
+    /// <summary>Tells the organizer which invitees won't get the email, because they unsubscribed or bounced.</summary>
+    private static async Task AddSuppressionNoticesAsync(SchedulerDbContext db, SchedulingEvent ev, List<string> notices, CancellationToken cancellationToken)
+    {
+        var invited = ev.Participants.Select(p => p.Email).ToList();
+        var suppressed = await db.Suppressions.AsNoTracking()
+            .Where(s => invited.Contains(s.Email))
+            .OrderBy(s => s.Email)
+            .ToListAsync(cancellationToken);
+        foreach (var suppression in suppressed)
+            notices.Add(suppression.Reason == SuppressionReason.Unsubscribed
+                ? $"{suppression.Email} has asked this server not to email them, so they won't get the invitation. They are still a participant; tell them about it yourself."
+                : $"Email to {suppression.Email} has bounced before, so they won't get the invitation. They are still a participant; check the address or tell them yourself.");
     }
 
     /// <summary>
@@ -633,6 +673,7 @@ public sealed class SchedulingService(
             Subject = email.Subject,
             TextBody = email.TextBody,
             HtmlBody = email.HtmlBody,
+            ListUnsubscribeUrl = email.ListUnsubscribeUrl,
             CreatedAt = now,
             NextAttemptAt = now,
         });

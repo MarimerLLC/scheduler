@@ -45,4 +45,35 @@ public sealed class EmailComposerTests
 
         StringAssert.Contains(Composer.Cancelled(ev, bob, null).TextBody, "rocky@example.com has cancelled");
     }
+
+    [TestMethod]
+    public void EventEmailsCarryTheRecipientsUnsubscribeLinks()
+    {
+        var composer = new PlainTextEmailComposer("https://sched.test/mcp", new FakeUnsubscribeLinks());
+        var ev = TestEvents.WithSlots(1);
+        var bob = ev.AddParticipant("bob@example.com");
+
+        var invitation = composer.Invitation(ev, bob, "https://sched.test/e/x");
+        var responded = composer.AllResponded(ev, "https://sched.test/events/1");
+
+        Assert.AreEqual("https://sched.test/unsubscribe/one-click?for=bob@example.com", invitation.ListUnsubscribeUrl);
+        StringAssert.Contains(invitation.TextBody, "https://sched.test/unsubscribe?for=bob@example.com");
+        Assert.AreEqual("https://sched.test/unsubscribe/one-click?for=rocky@example.com", responded.ListUnsubscribeUrl, "the organizer's own");
+    }
+
+    [TestMethod]
+    public void AccountLinkEmailsHaveNoUnsubscribe()
+    {
+        var composer = new PlainTextEmailComposer("https://sched.test/mcp", new FakeUnsubscribeLinks());
+
+        Assert.IsNull(composer.SignInLink("pat@example.com", "https://sched.test/verify?t=x").ListUnsubscribeUrl);
+        Assert.IsNull(composer.AddressVerification("pat@example.com", "https://sched.test/verify?t=x", "me@example.com").ListUnsubscribeUrl);
+    }
+
+    private sealed class FakeUnsubscribeLinks : IUnsubscribeLinks
+    {
+        public string PageUrl(string email) => $"https://sched.test/unsubscribe?for={email}";
+
+        public string OneClickUrl(string email) => $"https://sched.test/unsubscribe/one-click?for={email}";
+    }
 }

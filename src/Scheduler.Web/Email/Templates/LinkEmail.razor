@@ -1,0 +1,20 @@
+@* An email carrying a one-time link for the recipient's own account: confirming an address, signing in. *@
+
+<EmailFrame Title="@Subject">
+    @foreach (var paragraph in Paragraphs)
+    {
+        <p style="margin:0 0 16px;">@paragraph</p>
+    }
+    <p style="margin:24px 0;">
+        <a href="@ActionUrl" style="display:inline-block;padding:10px 20px;background:#0969da;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">@ActionLabel</a>
+    </p>
+    <p style="margin:0;font-size:14px;color:#59636e;">@Closing</p>
+</EmailFrame>
+
+@code {
+    [Parameter, EditorRequired] public string Subject { get; set; } = "";
+    [Parameter, EditorRequired] public IReadOnlyList<string> Paragraphs { get; set; } = [];
+    [Parameter, EditorRequired] public string ActionUrl { get; set; } = "";
+    [Parameter, EditorRequired] public string ActionLabel { get; set; } = "";
+    [Parameter, EditorRequired] public string Closing { get; set; } = "";
+}

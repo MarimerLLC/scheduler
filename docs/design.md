@@ -388,9 +388,16 @@ ID). Sign-ins aren't. Accounts are never merged: an address belongs to one accou
 ### Magic links (voters without an account)
 
 Each email to a participant carries their personal link `/e/{shortCode}?t={token}`. Opening it identifies
-the voter as that participant for that event only (a short-lived cookie scoped to the event). Anyone the
-email is forwarded to can vote as the recipient; that is acceptable for meeting scheduling and matches what
-Doodle and similar tools do.
+the voter as that participant for that event only. Anyone the email is forwarded to can vote as the
+recipient; that is acceptable for meeting scheduling and matches what Doodle and similar tools do.
+
+The voting page (`Vote.razor`) checks the token (`ResolveVotingLinkAsync`), puts it in a cookie
+(`scheduler.vote`, HttpOnly, SameSite=Lax, 12 hours, path `/e/{shortCode}` so it only goes back to that
+event) and redirects to `/e/{shortCode}` without it, so the token doesn't stay in the address bar or
+history or leak in a `Referer`. Opening the link only shows the page; only the form's button votes, so mail
+scanners that fetch links can't vote. A signed-in person who is a participant can use the page without
+the link. A link that is no longer valid (a new nonce, or another event's) gets a page saying to use the
+latest email.
 
 The token is `HMAC-SHA256(key, participantId ‖ nonce)` (`MagicLinks`), not a stored random value. That lets
 the server put the same working link in the invitation, the "new times" email and the reminder without
@@ -492,7 +499,7 @@ Blazor with per-page render modes.
 | Page | Render mode | Purpose |
 |---|---|---|
 | `/` | Static | What this is; how to connect an agent (the `/mcp` URL). |
-| `/e/{shortCode}?t=...` | **Static SSR with plain form posts** | Voting. Opened from email, often on a phone: no long-lived connection, survives flaky networks, works without JavaScript. |
+| `/e/{shortCode}?t=...` | **Static SSR with plain form posts** | Voting. Opened from email, often on a phone: no long-lived connection, survives flaky networks, works without JavaScript (`app.js` only adds each time in the viewer's own zone). See [Magic links](#magic-links-voters-without-an-account). |
 | `/events` | InteractiveServer | Organizer dashboard: my events, live tallies, ranked recommendation. |
 | `/events/new` | InteractiveServer | Compose an event by hand (creates a Draft, then Open). |
 | `/events/{id}` | InteractiveServer | One event: slots, votes by participant, finalize / propose more / withdraw / cancel. |
@@ -500,7 +507,8 @@ Blazor with per-page render modes.
 | `/signin/email` | Static SSR with a form post | Offers to email a sign-in link to an address the provider didn't verify. |
 | `/verify?t=...` | Static SSR with a form post | Confirms an emailed link: signs in, or adds the address to the signed-in account. |
 | `/admin/organizers` | InteractiveServer | Admins: manage the organizer allowlist. See [Administration](#administration). |
-| `/unsubscribe` | Static | Confirm page (GET) and RFC 8058 one-click endpoint (POST). |
+| `/unsubscribe?t=...` | Static SSR with form posts | Asks before unsubscribing (mail scanners fetch links); can undo an unsubscribe. |
+| `/unsubscribe/one-click?t=...` | Endpoint | The List-Unsubscribe URL: RFC 8058 POST unsubscribes (no cookies or antiforgery token); GET redirects to the page. |
 
 InteractiveServer notes: use `IDbContextFactory`, never a circuit-lived `DbContext`; get identity from
 `AuthenticationStateProvider`, not `IHttpContextAccessor` (which isn't reliable inside a circuit); live
@@ -529,13 +537,21 @@ Outbound only. Nothing parses inbound mail.
 Every message about an event:
 
 - Subject starts with `[sched:SHORTCODE]`, e.g. `[sched:7KQ2M9XD] Rocky Lhotka asks: Planning (vote by Fri Oct 30)`.
-- Plain-text body first (agents parse it), HTML alternative, rendered from Razor components with
-  `HtmlRenderer` so the markup lives next to the UI.
+- Plain-text body first (agents parse it; `PlainTextEmailComposer`), HTML alternative with the same content,
+  rendered from Razor components in `Scheduler.Web/Email/Templates` with `HtmlRenderer` so the markup lives
+  next to the UI (`HtmlEmailComposer`). Inline styles only, one column; Razor encodes the organizer's text.
 - Lists slots in the organizer's zone with offsets, and includes the magic link and a line for agent users:
   "Ask your assistant to *check my scheduling requests* (server: https://.../mcp)".
 - `Reply-To` is the organizer's address, so replies reach a person.
-- `List-Unsubscribe` with an HTTPS one-click URL (RFC 8058) and `List-Unsubscribe-Post`. The unsubscribe
-  token is a Data Protection–protected payload of the address, so it needs no table.
+- `List-Unsubscribe` with an HTTPS one-click URL (RFC 8058) and `List-Unsubscribe-Post`, and a footer line
+  linking the unsubscribe page. The unsubscribe token is a Data Protection–protected payload of the address
+  (`UnsubscribeLinks`), so it needs no table and old emails' links keep working (as long as the keys do).
+- Unsubscribing (`ISubscriptionService`) suppresses every email to the address and is audited
+  (`email.unsubscribed`); the page can undo it (`email.resubscribed`), but not a bounce or complaint.
+  `create_event` tells the organizer which invitees are suppressed, so they can reach them another way.
+
+The account emails (confirm an address, sign-in link) have no event code or unsubscribe link: the person
+asked for them, and they are rate limited per address.
 
 ### Delivery
 
@@ -715,9 +731,10 @@ Purged with the event. Admin actions (`organizer.added`, `organizer.removed`), t
 ## Roadmap
 
 1. ~~**Core service.** Implement `SchedulingService`, first migration, integration tests against
-   Testcontainers PostgreSQL.~~ Done. Notifications use a plain-text composer until item 2.
-2. **Email and voting page.** Templates, invitation/finalize/cancel flows through the outbox, magic-link
-   voting page.
+   Testcontainers PostgreSQL.~~ Done.
+2. ~~**Email and voting page.** Templates, invitation/finalize/cancel flows through the outbox, magic-link
+   voting page, unsubscribe.~~ Done. The reminder and "deadline passed" emails come with their jobs (item 4),
+   bounce notices with the provider webhooks (item 5).
 3. ~~**Identity.** Web sign-in (Microsoft, Google), MCP OAuth (OpenIddict, federated login, client ID
    metadata documents and dynamic registration), organizer allowlist, personal access tokens, verifying an
    address by email link, rate limits on `/mcp` and voting, purging unused dynamically registered clients.~~
