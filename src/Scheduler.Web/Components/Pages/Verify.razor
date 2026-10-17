@@ -1,0 +1,105 @@
+@page "/verify"
+@using Microsoft.AspNetCore.RateLimiting
+@using Scheduler.Core
+@using Scheduler.Core.Model
+@using Scheduler.Core.Security
+@using Scheduler.Core.Services
+@using Scheduler.Web.Identity
+@attribute [EnableRateLimiting(RateLimits.Pages)]
+@inject IAccountService Accounts
+@inject NavigationManager Navigation
+
+@* Static, with a plain form post: opened from an email, often on a phone. Opening the link only shows what it
+   does; the button uses it up. Mail scanners fetch links in incoming mail, and must not sign anyone in or
+   add an address by doing so. See docs/design.md, "Verifying an address by email". *@
+
+<PageTitle>Confirm your address</PageTitle>
+
+<h1>Confirm your address</h1>
+
+@if (_done is not null)
+{
+    <p role="status">@_done</p>
+    <p><a href="/account">Your account</a></p>
+}
+else if (_link is null)
+{
+    <p>This link has expired or has already been used. Ask for a new one.</p>
+}
+else if (_link.Purpose == EmailVerificationPurpose.SignIn)
+{
+    <p>Sign in as <strong>@_link.Email</strong>?</p>
+    @Error()
+    <form method="post" @formname="confirm-link" @onsubmit="ConfirmAsync">
+        <AntiforgeryToken />
+        <button type="submit">Sign in</button>
+    </form>
+}
+else if (_caller is null)
+{
+    <p>
+        Someone asked to add <strong>@_link.Email</strong> to their account. If it was you,
+        <a href="@ExternalSignIn.SignInPage(ThisPage)" data-enhance-nav="false">sign in to that account</a>
+        here first, then you can confirm.
+    </p>
+}
+else
+{
+    <p>Add <strong>@_link.Email</strong> to your account? You're signed in as @_caller.VerifiedEmails[0].</p>
+    <p class="hint">Invitations sent to @_link.Email can then be answered from this account and its agents.</p>
+    @Error()
+    <form method="post" @formname="confirm-link" @onsubmit="ConfirmAsync">
+        <AntiforgeryToken />
+        <button type="submit">Add address</button>
+    </form>
+}
+
+@code {
+    [CascadingParameter] public HttpContext HttpContext { get; set; } = default!;
+
+    /// <summary>The link's token. The form posts back to this URL.</summary>
+    [SupplyParameterFromQuery(Name = "t")] public string? Token { get; set; }
+
+    private VerificationView? _link;
+    private CallerIdentity? _caller;
+    private string? _error;
+    private string? _done;
+
+    private string ThisPage => VerificationLinks.Path + QueryString.Create("t", Token ?? "");
+
+    protected override async Task OnInitializedAsync()
+    {
+        _caller = CallerResolver.FromPrincipal(HttpContext.User, Channel.Web);
+        _link = Token is null ? null : await Accounts.FindVerificationAsync(Token, CancellationToken.None);
+    }
+
+    private async Task ConfirmAsync()
+    {
+        if (_link is null || Token is null)
+            return;
+        try
+        {
+            if (_link.Purpose == EmailVerificationPurpose.SignIn)
+            {
+                var signIn = await Accounts.ConfirmSignInAsync(Token, CancellationToken.None);
+                await ExternalSignIn.SignInAsync(HttpContext, signIn.Email, signIn.DisplayName, EmailLinkSignIn.ProviderName);
+                Navigation.NavigateTo(ExternalSignIn.LocalOrRoot(signIn.ReturnUrl));
+                return;
+            }
+
+            if (_caller is null)
+            {
+                _error = "Sign in to the account that asked for this address first.";
+                return;
+            }
+            var added = await Accounts.ConfirmAddressAsync(_caller, Token, CancellationToken.None);
+            _done = $"Added {added} to your account.";
+        }
+        catch (SchedulingException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private RenderFragment? Error() => _error is null ? null : @<p class="message error" role="alert">@_error</p>;
+}

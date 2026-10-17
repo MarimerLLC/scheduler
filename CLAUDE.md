@@ -14,8 +14,9 @@ it when a decision changes.
 
 ## Conventions
 
-- Every scheduling rule lives in `ISchedulingService`, every administration rule in `IAdminService`, and
-  every personal access token rule in `IAccessTokenService` (all in `Scheduler.Core`, implemented in `Scheduler.Data`). MCP tools and Blazor pages stay thin wrappers
+- Every scheduling rule lives in `ISchedulingService`, every administration rule in `IAdminService`, every
+  personal access token rule in `IAccessTokenService`, and every address and emailed-link rule in
+  `IAccountService` (all in `Scheduler.Core`, implemented in `Scheduler.Data`). MCP tools and Blazor pages stay thin wrappers
   so agents and people get the same behavior; hiding a tool or a button is never the access check.
 - Times are NodaTime. A slot's source of truth is local wall time + IANA zone; the `Instant` is derived.
   All local-to-UTC conversion goes through `SlotTimeResolver`. Never accept zone abbreviations or fixed offsets.
@@ -30,7 +31,8 @@ it when a decision changes.
   integration tests in `tests/Scheduler.Data.Tests` (real PostgreSQL, `Harness` sets up the cast and clock);
   sign-in and the MCP OAuth flow are tested through the real app in `tests/Scheduler.Web.Tests` (`SchedulerApp`).
 - Identity: every caller is a verified email address in a claim (`CallerResolver`). Whatever signs people
-  in must only issue verified addresses. The OAuth issuer and MCP resource URI come from the request
+  in must only issue verified addresses; an address a provider didn't verify goes through an emailed link
+  (`EmailLinkSignIn`, `/verify`). The OAuth issuer and MCP resource URI come from the request
   (`McpResource`), never from configuration.
 
 ## Environment notes

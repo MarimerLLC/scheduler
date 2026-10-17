@@ -1,5 +1,4 @@
 using System.Security.Cryptography.X509Certificates;
-using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using ModelContextProtocol.AspNetCore.Authentication;
@@ -123,6 +122,10 @@ internal static class IdentitySetup
         if (options.ConfiguredProviders.Count > 0)
             openIddict.AddClient(client => AddExternalProviders(client, options, development));
 
+        builder.Services.AddSingleton<IdentityCleanup>();
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<IdentityCleanup>());
+        builder.Services.AddDataProtection();
+        builder.Services.AddSingleton<EmailLinkSignIn>();
         builder.Services.AddScoped<ClientMetadataDocuments>();
         builder.Services.AddHttpClient(ClientMetadataDocuments.HttpClientName, http =>
             {
@@ -132,14 +135,6 @@ internal static class IdentitySetup
             // The timeout bounds the whole fetch, retries included: a document that can't be fetched
             // promptly fails the sign-in.
             .ConfigurePrimaryHttpMessageHandler(ClientMetadataDocuments.CreateHandler);
-
-        builder.Services.AddRateLimiter(limiter =>
-        {
-            limiter.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-            limiter.AddPolicy(DynamicClientRegistration.RateLimitPolicy, http => RateLimitPartition.GetFixedWindowLimiter(
-                http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-                _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromHours(1) }));
-        });
     }
 
     public static void MapSchedulerIdentity(this WebApplication app)

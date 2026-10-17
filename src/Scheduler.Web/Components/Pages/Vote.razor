@@ -1,7 +1,9 @@
 @page "/e/{Code}"
+@using Microsoft.AspNetCore.RateLimiting
+@attribute [EnableRateLimiting(RateLimits.Pages)]
 
 @* Static server rendering on purpose: people open this from an email link, often on a phone. Plain
-   form posts need no long-lived connection and survive a flaky network. See docs/design.md, "Web UI". *@
+   form posts need no long-lived connection and survive a flaky network. Rate limited per client IP. See docs/design.md, "Web UI". *@
 
 <PageTitle>Vote</PageTitle>
 

@@ -1,5 +1,6 @@
 using System.Text;
 using Scheduler.Core.Model;
+using Scheduler.Core.Security;
 using Scheduler.Core.Time;
 
 namespace Scheduler.Core.Email;
@@ -65,6 +66,31 @@ public sealed class PlainTextEmailComposer(string mcpUrl) : IEmailComposer
         body.AppendLine($"Or ask your assistant to finalize scheduling event {ev.ShortCode}.");
         return new ComposedEmail(Subject(ev, $"Everyone has responded: {ev.Title}"), body.ToString());
     }
+
+    public ComposedEmail AddressVerification(string email, string link, string requestedBy)
+    {
+        var body = new StringBuilder();
+        body.AppendLine($"{requestedBy} asked to add {email} to their account on the scheduling server.");
+        body.AppendLine("Confirming lets that account see and answer meeting invitations sent to this address.");
+        body.AppendLine();
+        body.AppendLine($"If that's you, confirm here while signed in as {requestedBy}:");
+        body.AppendLine($"  {link}");
+        body.AppendLine();
+        body.AppendLine($"The link works once, for {LinkMinutes} minutes. If you didn't ask for this, ignore this email; nothing changes.");
+        return new ComposedEmail($"Confirm {email} for the scheduling server", body.ToString());
+    }
+
+    public ComposedEmail SignInLink(string email, string link)
+    {
+        var body = new StringBuilder();
+        body.AppendLine($"Someone is signing in to the scheduling server as {email}. If it's you, finish signing in here:");
+        body.AppendLine($"  {link}");
+        body.AppendLine();
+        body.AppendLine($"The link works once, for {LinkMinutes} minutes. If you didn't try to sign in, ignore this email.");
+        return new ComposedEmail("Your sign-in link for the scheduling server", body.ToString());
+    }
+
+    private static int LinkMinutes => (int)VerificationLinks.Lifetime.TotalMinutes;
 
     private static string Subject(SchedulingEvent ev, string text) => $"[sched:{ev.ShortCode}] {text}";
 

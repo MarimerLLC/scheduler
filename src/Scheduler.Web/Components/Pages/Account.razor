@@ -7,12 +7,13 @@
 @using Scheduler.Core.Security
 @using Scheduler.Core.Services
 @using Scheduler.Web.Identity
-@inject IAdminService Admin
 @inject IAccessTokenService Tokens
+@inject IAccountService Accounts
 @inject NavigationManager Navigation
 
-@* Interactive: tokens are created and revoked in place, and a new token is shown once, here. Every action
-   goes through IAccessTokenService, which checks the caller again. See docs/design.md, "Personal access tokens". *@
+@* Interactive: addresses and tokens are changed in place, and a new token is shown once, here. Every action
+   goes through IAccountService or IAccessTokenService, which check the caller again. See docs/design.md,
+   "Verifying an address by email" and "Personal access tokens". *@
 
 <PageTitle>Account</PageTitle>
 
@@ -28,10 +29,52 @@ else if (_caller is null)
 }
 else
 {
-    <p>
-        Your verified addresses: @string.Join(", ", _access?.Emails ?? []). Invitations to any of them can be
-        answered from this account.
-    </p>
+    <h2>Addresses</h2>
+
+    <p>Invitations to any of these addresses can be answered from this account, and by agents connected as you.</p>
+
+    <table class="list">
+        <thead>
+            <tr><th>Address</th><th>Verified</th><th></th></tr>
+        </thead>
+        <tbody>
+            @foreach (var address in _addresses)
+            {
+                <tr>
+                    <td>@address.Email</td>
+                    <td data-label="Verified">@(address.VerifiedAt ?? "by your sign-in")</td>
+                    <td>
+                        @if (address.SignedInWith)
+                        {
+                            <span class="hint">signed in</span>
+                        }
+                        else if (_confirmRemove == address.Email)
+                        {
+                            <button class="danger" disabled="@_busy" @onclick="() => RemoveAddressAsync(address.Email)">Confirm remove</button>
+                            <button disabled="@_busy" @onclick="() => _confirmRemove = null">Keep</button>
+                        }
+                        else
+                        {
+                            <button disabled="@_busy" @onclick="() => _confirmRemove = address.Email">Remove</button>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <EditForm Model="_addressForm" OnSubmit="AddAddressAsync" class="inline-form">
+        <label>
+            <span>Add an address</span>
+            <InputText type="email" @bind-Value="_addressForm.Email" placeholder="you@work.example" maxlength="@FieldLimits.EmailMax" />
+        </label>
+        <button type="submit" disabled="@_busy">Send confirmation link</button>
+    </EditForm>
+
+    @if (_addressMessage is not null)
+    {
+        <p class="@(_addressIsError ? "message error" : "message")" role="status">@_addressMessage</p>
+    }
 
     <h2>Personal access tokens</h2>
 
@@ -120,6 +163,11 @@ else
 @code {
     [CascadingParameter] private Task<AuthenticationState>? AuthenticationState { get; set; }
 
+    private sealed class AddressForm
+    {
+        public string? Email { get; set; }
+    }
+
     private sealed class CreateForm
     {
         public string? Name { get; set; }
@@ -129,8 +177,12 @@ else
     private static readonly int[] ExpiryChoices = [30, 90, 180, AccessTokens.MaxLifetimeDays];
 
     private readonly CreateForm _form = new();
+    private readonly AddressForm _addressForm = new();
     private CallerIdentity? _caller;
-    private CallerAccess? _access;
+    private IReadOnlyList<AccountAddressView> _addresses = [];
+    private string? _confirmRemove;
+    private string? _addressMessage;
+    private bool _addressIsError;
     private IReadOnlyList<AccessTokenView> _tokens = [];
     private CreatedAccessToken? _created;
     private bool _loading = true;
@@ -147,7 +199,7 @@ else
         _caller = CallerResolver.FromPrincipal(state?.User, Channel.Web);
         if (_caller is not null)
         {
-            _access = await Admin.GetAccessAsync(_caller, CancellationToken.None);
+            _addresses = await Accounts.ListAddressesAsync(_caller, CancellationToken.None);
             _tokens = await Tokens.ListAsync(_caller, CancellationToken.None);
         }
         _loading = false;
@@ -170,6 +222,47 @@ else
             await Tokens.RevokeAsync(_caller!, token.Id, CancellationToken.None);
             return $"Revoked \"{token.Name}\". Anything still using it is signed out.";
         });
+    }
+
+    private async Task AddAddressAsync()
+    {
+        await RunAddressAsync(async () =>
+        {
+            var email = _addressForm.Email ?? "";
+            await Accounts.RequestAddressAsync(_caller!, email, CancellationToken.None);
+            _addressForm.Email = null;
+            return $"We sent a link to {email.Trim()}. Open it within {(int)VerificationLinks.Lifetime.TotalMinutes} minutes, signed in as you are now, to add the address.";
+        });
+    }
+
+    private async Task RemoveAddressAsync(string email)
+    {
+        await RunAddressAsync(async () =>
+        {
+            await Accounts.RemoveAddressAsync(_caller!, email, CancellationToken.None);
+            return $"Removed {email}. Invitations to it can no longer be answered from this account.";
+        });
+    }
+
+    private async Task RunAddressAsync(Func<Task<string>> action)
+    {
+        _busy = true;
+        try
+        {
+            _addressMessage = await action();
+            _addressIsError = false;
+            _addresses = await Accounts.ListAddressesAsync(_caller!, CancellationToken.None);
+        }
+        catch (SchedulingException ex)
+        {
+            _addressMessage = ex.Message;
+            _addressIsError = true;
+        }
+        finally
+        {
+            _busy = false;
+            _confirmRemove = null;
+        }
     }
 
     private async Task RunAsync(Func<Task<string>> action)

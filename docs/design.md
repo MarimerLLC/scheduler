@@ -134,6 +134,7 @@ All tables in PostgreSQL via EF Core 10. Times are NodaTime types, mapped native
 | `UserAccount` | `Id` | A signed-in person. |
 | `OrganizerGrant` | `Pattern` | An admin's grant to organize: an exact address or `*@domain`, with an optional note and who granted it when. |
 | `UserEmail` | `Email` | A verified address owned by one account. An account can have several. |
+| `EmailVerification` | `Id`; unique `TokenHash` | A link emailed to an address to prove it: to add it to an account, or to sign in. SHA-256 of the token, purpose, account (when adding), created/expires/used times. See [Verifying an address by email](#verifying-an-address-by-email). |
 | `PersonalAccessToken` | `Id`; unique `TokenHash` | An agent's bearer token for one account: name, SHA-256 of the token, display prefix, created/expires/last-used/revoked times. See [Personal access tokens](#personal-access-tokens). |
 | `AuditEntry` | `Id` (bigint) | Append-only: who did what, when, through which channel. |
 | `OutboxEmail` | `Id` (bigint) | Emails waiting to be sent, written in the same transaction as the change that caused them. |
@@ -272,9 +273,8 @@ The cookie holds the verified address and the display name; `/signout` clears it
 be an unverified, user-editable attribute in some tenants. `ExternalEmail` trusts a Microsoft address only
 from a personal account (tenant `9188040d-6c67-4c5b-b112-36a304b66dad`) or when the token carries
 `xms_edov` (email domain owner verified), which the Entra app registration must add as an optional ID token
-claim. Anything else is refused with a message suggesting Google or a personal account for that address.
-(Not yet: verifying such an address by sending a link, and adding further addresses to an account the same
-way.)
+claim. For anything else, and for any other address a provider returns without verifying it, the person is
+offered a sign-in link emailed to that address instead (see [Verifying an address by email](#verifying-an-address-by-email)).
 
 Signing in doesn't create a `UserAccount`; the first `create_event` or personal access token does. Every caller is
 identified by a verified address, and the service finds the account (and its other addresses) from it.
@@ -309,8 +309,9 @@ and when a refresh token runs out.
   `client_id` can't probe the cluster's network. Discovery advertises
   `client_id_metadata_document_supported`.
 - **Dynamic client registration** (RFC 7591) at `/connect/register`, which MCP now deprecates but older
-  clients use. Rate limited to 10 registrations per address per hour. The client gets a `dcr_...` id; its
-  name is shown on the consent page as unverified.
+  clients use. Rate limited to 10 registrations per client IP per hour. The client gets a `dcr_...` id; its
+  name is shown on the consent page as unverified. A client that hasn't got an authorization or a token a
+  day after registering is deleted (`IdentityCleanup`), since anyone can register one.
 
 Either way the client is public (PKCE, no secret; a requested authentication method is replaced with
 `none`), and every redirect URI must be HTTPS or HTTP on a loopback host. A port-less loopback redirect URI
@@ -355,6 +356,35 @@ token instead, sent as `Authorization: Bearer sched_pat_...` on `/mcp` (from Roc
 - `/mcp`'s bearer scheme sends `sched_pat_...` values to `PersonalAccessTokenHandler` and everything else
   to OpenIddict's validation.
 
+### Verifying an address by email
+
+Two things prove an address by emailing it a link, both in `IAccountService`:
+
+- **Signing in with an address the provider didn't verify**, such as a work address from an Entra tenant
+  without `xms_edov`. Instead of refusing, the callback sends the browser to `/signin/email`, which offers
+  to email a sign-in link to that address. The address, name and return URL travel in the URL, protected by
+  Data Protection for 15 minutes so they can't be changed; nothing is sent until the person asks. Opening
+  the link signs that browser in as the address (provider `Email`). Any browser can use it, so a person can
+  start on a laptop and finish on a phone; the link only ever signs in as the address it was sent to.
+- **Adding an address to an account**, on `/account`. The link adds the address to the account that asked
+  for it, and only works in a browser signed in to that account. Otherwise someone could send a victim a
+  link to "confirm" and, if they clicked it, receive the victim's invitations. An address that already
+  belongs to another account isn't moved; it has to be removed there first. Any address but the one the
+  person is signed in with can be removed. Asking creates the account if there isn't one yet, as the first
+  token does. An account has at most 10 addresses.
+
+Both kinds of link:
+
+- go to `/verify?t=...`, where the token is 256 random bits in base64url, stored only as a SHA-256 hash;
+- work once, for 30 minutes;
+- do nothing when the page is opened, only when its button is pressed, because mail scanners fetch every
+  link in incoming mail;
+- are limited to 3 per address per hour, whoever asks, and 10 per account per hour, so the server can't be
+  used to flood an inbox; suppressed addresses get none.
+
+Adding and removing addresses is audited (`address.requested`, `address.added`, `address.removed`, no event
+ID). Sign-ins aren't. Accounts are never merged: an address belongs to one account.
+
 ### Magic links (voters without an account)
 
 Each email to a participant carries their personal link `/e/{shortCode}?t={token}`. Opening it identifies
@@ -380,7 +410,8 @@ In the Development environment only:
 
 - an `X-Dev-Email` header on `/mcp` acts as that address, so curl or a local client can skip OAuth;
 - `/dev/signin` lets the browser sign in as any address (a cookie with that email claim). `/signin` links
-  to it, so the whole MCP OAuth flow can be tried without Microsoft or Google credentials;
+  to it, so the whole MCP OAuth flow can be tried without Microsoft or Google credentials. It can also
+  pretend the address is unverified, to try signing in by email link (the link arrives in Mailpit);
 - the OAuth endpoints work over plain HTTP, and development certificates sign the tokens.
 
 None of these exist in any other environment. `/mcp` requires a token (or the dev header) everywhere, and
@@ -465,7 +496,9 @@ Blazor with per-page render modes.
 | `/events` | InteractiveServer | Organizer dashboard: my events, live tallies, ranked recommendation. |
 | `/events/new` | InteractiveServer | Compose an event by hand (creates a Draft, then Open). |
 | `/events/{id}` | InteractiveServer | One event: slots, votes by participant, finalize / propose more / withdraw / cancel. |
-| `/account` | InteractiveServer | Verified addresses, personal access tokens. |
+| `/account` | InteractiveServer | Verified addresses (add by email link, remove), personal access tokens. |
+| `/signin/email` | Static SSR with a form post | Offers to email a sign-in link to an address the provider didn't verify. |
+| `/verify?t=...` | Static SSR with a form post | Confirms an emailed link: signs in, or adds the address to the signed-in account. |
 | `/admin/organizers` | InteractiveServer | Admins: manage the organizer allowlist. See [Administration](#administration). |
 | `/unsubscribe` | Static | Confirm page (GET) and RFC 8058 one-click endpoint (POST). |
 
@@ -490,8 +523,10 @@ Outbound only. Nothing parses inbound mail.
 | It's set | Everyone | Finalized |
 | Cancelled | Everyone invited | Cancelled |
 | Delivery problem | Organizer | A participant's address bounces |
+| Confirm an address | The address | Someone asks to add it to their account |
+| Sign-in link | The address | Someone signing in asks for a link to an address the provider didn't verify |
 
-Every message:
+Every message about an event:
 
 - Subject starts with `[sched:SHORTCODE]`, e.g. `[sched:7KQ2M9XD] Rocky Lhotka asks: Planning (vote by Fri Oct 30)`.
 - Plain-text body first (agents parse it), HTML alternative, rendered from Razor components with
@@ -526,6 +561,7 @@ Hosted services in the web process (single replica in v1):
 | Deadline | 5 min | Expires open events past respond-by; emails the organizer |
 | Reminders | 15 min | One reminder per participant ~24 h before respond-by |
 | Retention purge | Daily | Deletes events closed more than N days ago (default 30), with their slots, participants, votes, audit and outbox rows; deletes drafts untouched for 7 days |
+| Identity cleanup | Hourly | Prunes OAuth tokens and authorizations that lapsed over 14 days ago (OpenIddict's pruning); deletes dynamically registered clients with no authorization or token a day after registering, and expired address links (implemented) |
 | tzdb check | On startup | If the tzdb version changed, recompute `Start` for future slots of open events |
 
 ## Administration
@@ -584,8 +620,14 @@ The server sends email to addresses it is given, so an open `create_event` would
 - Only allowlisted organizers can create events: a configured entry (`Scheduler:Organizers`) or an admin's
   grant (see [Administration](#administration)). An allowlisted caller's first `create_event` provisions a
   `UserAccount` owning their verified addresses that no other account has claimed.
-- Rate limits per organizer (events per day, invitations per day) and on `/mcp` and the voting endpoints
-  (ASP.NET Core rate limiting).
+- Rate limits (ASP.NET Core rate limiting, `RateLimits`, configurable under `RateLimits`): `/mcp` 120
+  requests per minute per caller (account or address; it runs after authorization, so the caller is known);
+  the pages opened from email links (`/e/...`, `/verify`) 30 per minute per client IP; asking for a sign-in
+  link 10 per hour per client IP; dynamic client registration 10 per hour per client IP. Rejections are 429
+  with `Retry-After`. Client IPs need forwarded headers behind the ingress, or every request looks like it
+  comes from the proxy.
+- Per-address and per-account limits on emailed links and tokens are rules in the services.
+- Not yet: rate limits per organizer (events per day, invitations per day).
 - Participants never need an account to vote.
 
 ### Prompt injection
@@ -619,8 +661,9 @@ which has that person's mail and calendar tools.
 `AuditEntry` rows record actions such as `event.created`, `vote.cast`, `slot.withdrawn`,
 `event.finalized`, `email.bounced`, with the actor's address (or none, for the system) and the channel
 (`mcp`, `web`, `email`, `system`). Useful for "why was this finalized?" and for debugging agent behavior.
-Purged with the event. Admin actions (`organizer.added`, `organizer.removed`) and
-token changes (`token.created`, `token.revoked`) have no event and are kept.
+Purged with the event. Admin actions (`organizer.added`, `organizer.removed`), token changes
+(`token.created`, `token.revoked`) and address changes (`address.requested`, `address.added`,
+`address.removed`) have no event and are kept.
 
 ## Technology
 
@@ -670,10 +713,10 @@ token changes (`token.created`, `token.revoked`) have no event and are kept.
    Testcontainers PostgreSQL.~~ Done. Notifications use a plain-text composer until item 2.
 2. **Email and voting page.** Templates, invitation/finalize/cancel flows through the outbox, magic-link
    voting page.
-3. **Identity.** ~~Web sign-in (Microsoft, Google), MCP OAuth (OpenIddict, federated login, client ID
-   metadata documents and dynamic registration), organizer allowlist.~~ Done. ~~Personal access tokens.~~ Done.
-   Still to do: verifying an address by email link, rate limits on `/mcp` and voting, and purging dynamically
-   registered clients that are never used.
+3. ~~**Identity.** Web sign-in (Microsoft, Google), MCP OAuth (OpenIddict, federated login, client ID
+   metadata documents and dynamic registration), organizer allowlist, personal access tokens, verifying an
+   address by email link, rate limits on `/mcp` and voting, purging unused dynamically registered clients.~~
+   Done.
 4. **Organizer UI and jobs.** Dashboard with live tallies, compose page, deadline, reminder, purge and
    tzdb jobs.
 5. **Production.** Email provider and webhooks, DNS, deployment.

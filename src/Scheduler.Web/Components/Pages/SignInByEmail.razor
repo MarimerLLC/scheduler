@@ -1,0 +1,78 @@
+@page "/signin/email"
+@using Microsoft.AspNetCore.RateLimiting
+@using Scheduler.Core
+@using Scheduler.Core.Security
+@using Scheduler.Core.Services
+@using Scheduler.Web.Identity
+@attribute [EnableRateLimiting(RateLimits.EmailLinks)]
+@inject EmailLinkSignIn EmailLinks
+@inject IAccountService Accounts
+
+@* Static, with a plain form post. A sign-in provider returned an address without verifying it, so offer to
+   prove it by emailing a link there instead. Nothing is sent until the person asks. See docs/design.md,
+   "Verifying an address by email". *@
+
+<PageTitle>Sign in by email</PageTitle>
+
+<h1>Sign in by email</h1>
+
+@if (_pending is null)
+{
+    <p>This sign-in has expired. <a href="@ExternalSignIn.SignInPath" data-enhance-nav="false">Start again</a>.</p>
+}
+else if (_sent)
+{
+    <p role="status">
+        We sent a link to <strong>@_pending.Email</strong>. Open it within
+        @((int)VerificationLinks.Lifetime.TotalMinutes) minutes, on any device, to finish signing in.
+    </p>
+}
+else
+{
+    @if (_pending.Reason is not null)
+    {
+        <p>@_pending.Reason</p>
+    }
+    <p>We can email a link to <strong>@_pending.Email</strong>. Opening it proves the address is yours and signs you in.</p>
+
+    @if (_error is not null)
+    {
+        <p class="message error" role="alert">@_error</p>
+    }
+
+    <form method="post" @formname="send-sign-in-link" @onsubmit="SendAsync">
+        <AntiforgeryToken />
+        <button type="submit">Email me a sign-in link</button>
+    </form>
+
+    <p class="hint">
+        Or <a href="@ExternalSignIn.SignInPage(_pending.ReturnUrl)" data-enhance-nav="false">sign in another way</a>,
+        such as with Google or a personal Microsoft account for this address.
+    </p>
+}
+
+@code {
+    /// <summary>The protected pending sign-in, from the provider callback. The form posts back to this URL.</summary>
+    [SupplyParameterFromQuery(Name = "p")] public string? Pending { get; set; }
+
+    private PendingEmailSignIn? _pending;
+    private bool _sent;
+    private string? _error;
+
+    protected override void OnInitialized() => _pending = EmailLinks.Read(Pending);
+
+    private async Task SendAsync()
+    {
+        if (_pending is null)
+            return;
+        try
+        {
+            await Accounts.RequestSignInLinkAsync(_pending.Email, _pending.DisplayName, ExternalSignIn.LocalOrRoot(_pending.ReturnUrl), CancellationToken.None);
+            _sent = true;
+        }
+        catch (SchedulingException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+}
