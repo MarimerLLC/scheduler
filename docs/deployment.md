@@ -77,16 +77,42 @@ kubectl exec -n default statefulset/postgres -- psql -U "$ADMIN" -d scheduler -c
 
 ## 3. Secrets
 
-Two secrets, created by hand, never committed:
+Two secrets, never committed:
 
-- **`scheduler-identity`**: the Microsoft and Google clients and the token certificates. Follow
-  [identity-setup.md](identity-setup.md) sections 1 to 4 with `scheduler.tail920062.ts.net` as the host, so the
-  redirect URIs are `https://scheduler.tail920062.ts.net/signin/callback/microsoft` and `.../google`.
+- **`scheduler-identity`**: the Microsoft and Google clients and the token certificates.
 - **`scheduler-app`**: the connection string, the voting-link key, admins and organizers, and the SMTP relay.
-  Copy `k8s/secret.example.yaml` outside the repo, fill in every `CHANGE_ME`, then
-  `kubectl apply -f <your copy>` and delete the copy.
-  - `Scheduler__MagicLinkKey`: `openssl rand -base64 32`. Changing it later breaks every voting link already sent.
-  - `Scheduler__Admins__0`, `__1`, ...: exact addresses. `Scheduler__Organizers__0`, ...: addresses or `*@domain`.
+
+First register the apps: [identity-setup.md](identity-setup.md) sections 1 and 2, with `scheduler.tail920062.ts.net`
+as the host, so the redirect URIs are `https://scheduler.tail920062.ts.net/signin/callback/microsoft` and `.../google`.
+Then, in your own terminal (Git Bash on Windows is fine):
+
+```sh
+./k8s/create-secrets.sh
+```
+
+It asks for each secret value without echoing it, checks it before going on, and creates both secrets after you
+confirm:
+
+| It asks for | It checks |
+|---|---|
+| Microsoft client secret (the Value, not the Secret ID) | Microsoft issues a token with it |
+| Google client secret | Google's token endpoint accepts the client |
+| The `scheduler` role's password (step 1) | It signs in to the database |
+| Admins (exact addresses) and organizers (addresses or `*@domain`) | |
+| Brevo SMTP key (the login defaults to this account's) | Optionally sends a test email to the first admin through Brevo |
+
+It generates the token certificates (two years; the expiry is printed) and the voting-link key, and fills in the
+client IDs, tenant and relay settings, which aren't secret (they are at the top of the script; change them there
+for another deployment). Nothing is written to disk outside a temporary folder it deletes.
+
+**Changing one value later** (a new client secret or SMTP key, another admin):
+`./k8s/create-secrets.sh --set scheduler-app Email__Smtp__Password`, then
+`kubectl rollout restart deployment/scheduler -n scheduler`. Don't delete and recreate both secrets for that: a full
+run makes a new voting-link key, which breaks every voting link already emailed, and new token certificates, which
+sign every MCP client out.
+
+Without the script: `k8s/secret.example.yaml` lists every key of `scheduler-app`, and identity-setup.md section 4
+shows `scheduler-identity`.
 
 ## 4. Build and deploy
 
