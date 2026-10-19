@@ -11,25 +11,39 @@ server only ever learns the votes.
 See [docs/design.md](docs/design.md) for the full design, and
 [docs/identity-setup.md](docs/identity-setup.md) for setting up sign-in on a deployed server.
 
+## Works well with Adjutant
+
+Scheduler deliberately never sees a calendar, so each person's agent needs calendar tools of its own.
+[Adjutant (calendar-mcp)](https://github.com/MarimerLLC/calendar-mcp) is an MCP server that gives an agent
+email, calendar and contacts across Microsoft 365, Outlook.com, Google Workspace and IMAP accounts. With both
+connected, an agent can do the whole loop:
+
+- **Organizing:** find free times with Adjutant's `find_available_times`, then propose them with Scheduler's
+  `create_event`. Once a time is picked (`finalize_event`), create the real meeting with Adjutant's
+  `create_event` and report it back with `record_calendar_event`.
+- **Being invited:** find Scheduler's invitation emails (subjects start with `[sched:CODE]`) with Adjutant's
+  `search_emails`, check each proposed time against `get_calendar_events`, then `vote`, and accept the
+  organizer's real invitation later with `respond_to_event`.
+
+Neither needs the other: any calendar MCP server works, and people without an agent vote from the link in the
+invitation email.
+
 ## Status
 
-In place and tested:
+Version 1 is complete (roadmap steps 1 to 5 in the design doc) and runs in production:
 
-- Domain model, state machine, slot ranking, time-zone handling (NodaTime), voting-link tokens
-- `SchedulingService`: every operation, with audit entries and queued notification emails
-- EF Core model and the initial migration for PostgreSQL
 - MCP endpoint (`/mcp`) with every tool, both prompts and the server instructions
-- Administration: admins (from configuration) manage who may organize, through admin-only MCP tools or
-  the `/admin/organizers` page
-- Email outbox dispatcher and SMTP sender (Mailpit in development), plain-text notifications
-- Sign-in: Microsoft and Google for the browser, and OAuth for MCP clients (this app is its own
-  authorization server, federating to the same providers; clients register with a client ID metadata
-  document or dynamic client registration), plus personal access tokens for headless agents such as
-  RockBot, managed on `/account`
-- Aspire AppHost for local development
+- Sign-in: Microsoft and Google for the browser, OAuth for MCP clients (this app is its own authorization
+  server, federating to the same providers), personal access tokens for headless agents such as RockBot, and
+  an emailed link for addresses a provider doesn't verify
+- Web UI: the voting page opened from the invitation email, the organizer's dashboard, compose and event
+  pages (live as votes arrive), account and admin pages
+- Email: plain-text and HTML messages through an outbox and any SMTP relay, one-click unsubscribe, and
+  reminder, deadline, retention and time-zone jobs
+- Rate limits, per-organizer limits, and the Kubernetes deployment (`k8s/`, [docs/deployment.md](docs/deployment.md))
 
-Not yet: the voting and organizer pages, HTML email templates
-and unsubscribe links, and the reminder, deadline and purge jobs. The roadmap is in the design doc.
+Next (v1.1 in the design doc): a long-running `wait_for_update` task, RockBot integration, and an `.ics`
+invite for organizers without a calendar MCP server.
 
 ## Layout
 
