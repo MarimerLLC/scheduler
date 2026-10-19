@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <!-- The 16-24 px version of ../favicon.svg: fewer, bolder shapes on a pixel grid, so it stays readable in a tab. -->
+  <rect width="16" height="16" rx="3" fill="#04162e"/>
+  <rect x="2" y="3" width="12" height="11" rx="2" fill="#33465e"/>
+  <path d="M2 5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1H2z" fill="#f5a94b"/>
+  <rect x="4" y="1" width="2" height="3" rx="1" fill="#c97a2b"/>
+  <rect x="10" y="1" width="2" height="3" rx="1" fill="#c97a2b"/>
+  <path d="M4.6 9.6l2.2 2.2 4.6-4.8" fill="none" stroke="#4bcfe1" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
