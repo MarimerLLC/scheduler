@@ -52,13 +52,22 @@ spec:
             requests: { cpu: 100m, memory: 256Mi }
             limits: { cpu: "1", memory: 768Mi }
           livenessProbe:
-            httpGet: { path: /alive, port: 8080 }
+            httpGet:
+              path: /alive
+              port: 8080
+              httpHeaders:
+                # AllowedHosts refuses any other Host (400), and the kubelet would send the pod IP.
+                - { name: Host, value: scheduler.tail920062.ts.net }
             initialDelaySeconds: 20
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3
           readinessProbe:
-            httpGet: { path: /health, port: 8080 }
+            httpGet:
+              path: /health
+              port: 8080
+              httpHeaders:
+                - { name: Host, value: scheduler.tail920062.ts.net }
             initialDelaySeconds: 5
             periodSeconds: 5
             timeoutSeconds: 3
