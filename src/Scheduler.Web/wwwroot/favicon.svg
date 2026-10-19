@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Scheduler: a calendar page with the picked time checked, in RockBot's colours, taken from its logo: navy
+       #04162e, amber crest #f5a94b, steel plating #506070, cyan eye glow #4bcfe1. favicon.ico holds PNG renders of
+       this (48 to 256 px) and of icons/favicon-small.svg (16 to 32 px); apple-touch-icon.png is this at 180 px on a
+       square navy background. -->
+  <defs>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="1.6" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <linearGradient id="page" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3a4d64"/>
+      <stop offset="1" stop-color="#26374d"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#04162e"/>
+  <!-- page -->
+  <rect x="10" y="15" width="44" height="40" rx="6" fill="url(#page)" stroke="#506070" stroke-width="1.5"/>
+  <!-- amber header -->
+  <path d="M10 21a6 6 0 0 1 6-6h32a6 6 0 0 1 6 6v5H10z" fill="#f5a94b"/>
+  <!-- binder rings -->
+  <rect x="19" y="9" width="5" height="11" rx="2.5" fill="#c97a2b" stroke="#04162e" stroke-width="1.2"/>
+  <rect x="40" y="9" width="5" height="11" rx="2.5" fill="#c97a2b" stroke="#04162e" stroke-width="1.2"/>
+  <!-- the other proposed times -->
+  <g fill="#6f8297">
+    <rect x="15" y="31" width="7" height="6" rx="1.5"/>
+    <rect x="15" y="42" width="7" height="6" rx="1.5"/>
+    <rect x="42" y="42" width="7" height="6" rx="1.5"/>
+  </g>
+  <!-- the picked time -->
+  <path d="M26 41l6 6 12-13" fill="none" stroke="#4bcfe1" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)"/>
+</svg>
