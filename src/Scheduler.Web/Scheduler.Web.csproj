@@ -2,6 +2,10 @@
 
   <PropertyGroup>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    <!-- .NET 10 ships blazor.web.js in a separate package (Microsoft.AspNetCore.App.Internal.Assets), which restore
+         only adds when it sees .razor files. The Dockerfile restores from project files alone, so say so here, or the
+         image has no _framework/blazor.web.js and no page becomes interactive. -->
+    <RequiresAspNetWebAssets>true</RequiresAspNetWebAssets>
   </PropertyGroup>
 
   <ItemGroup>

@@ -54,3 +54,8 @@ jobs:
 
       - name: Build the image
         run: docker build -t scheduler:ci .
+
+      # .NET 10 restores Blazor's script from a separate package, which a project-files-only restore can miss
+      # (see RequiresAspNetWebAssets in Scheduler.Web.csproj); without it no page in the image is interactive.
+      - name: Check Blazor's script is in the image
+        run: docker run --rm --entrypoint test scheduler:ci -f /app/wwwroot/_framework/blazor.web.js
