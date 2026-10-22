@@ -513,7 +513,9 @@ Blazor with per-page render modes.
 InteractiveServer notes: use `IDbContextFactory`, never a circuit-lived `DbContext`; get identity from
 `AuthenticationStateProvider`, not `IHttpContextAccessor` (which isn't reliable inside a circuit); live
 updates come from an in-process change notifier (`IEventChanges`) the services and jobs raise after each
-save; pages subscribe only once interactive (`RendererInfo.IsInteractive`), not while prerendering. Organizer
+save. Pages are prerendered, but load their data (and subscribe) only once interactive
+(`RendererInfo.IsInteractive`): the prerendered copy just says "Loading…", so the page doesn't show its data,
+blank it while the interactive copy loads it again, then show it again. Organizer
 actions pass the version the page shows, so a change made meanwhile by an agent or another tab is refused
 with a message rather than overwritten. Scaling past one replica would need sticky sessions and a backplane
 for that notifier.

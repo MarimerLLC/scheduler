@@ -1,15 +1,20 @@
 using System.Net;
+using System.Security.Claims;
+using Bunit;
+using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
 using NodaTime;
 using Scheduler.Core.Email;
 using Scheduler.Core.Model;
 using Scheduler.Core.Services;
+using Scheduler.Web.Components.Pages;
 
 namespace Scheduler.Web.Tests;
 
 /// <summary>
-/// The organizer pages as the server first renders them (prerendering), signed in with the development sign-in,
-/// and the job emails' HTML. The interactive actions are thin calls into ISchedulingService, tested in Scheduler.Data.Tests.
+/// The organizer pages, rendered as they are once interactive (bUnit, with the app's services), and the job emails'
+/// HTML. The pages load nothing while prerendering. The interactive actions are thin calls into ISchedulingService,
+/// tested in Scheduler.Data.Tests.
 /// </summary>
 [TestClass]
 public sealed class OrganizerPageTests
@@ -25,12 +30,23 @@ public sealed class OrganizerPageTests
     public async Task StopAsync() => await _app.DisposeAsync();
 
     [TestMethod]
+    public async Task The_prerendered_page_loads_nothing()
+    {
+        var ev = await CreateEventAsync();
+
+        var html = await PrerenderAsync("rocky@example.com", "/events");
+
+        StringAssert.Contains(html, "Loading…");
+        Assert.DoesNotContain($"/events/{ev.Id}", html);
+    }
+
+    [TestMethod]
     public async Task The_dashboard_shows_what_the_organizer_runs_and_how_many_answered()
     {
         var ev = await CreateEventAsync();
         await VoteAsync("bob@example.com", ev);
 
-        var html = await PageAsync("rocky@example.com", "/events");
+        var html = await RenderAsync<Events>("rocky@example.com");
 
         StringAssert.Contains(html, $"/events/{ev.Id}");
         StringAssert.Contains(html, "1 of 3");
@@ -42,7 +58,7 @@ public sealed class OrganizerPageTests
     {
         var ev = await CreateEventAsync();
 
-        var html = await PageAsync("carol@example.com", "/events");
+        var html = await RenderAsync<Events>("carol@example.com");
 
         StringAssert.Contains(html, "Waiting for your answer");
         StringAssert.Contains(html, $"/e/{ev.ShortCode}");
@@ -55,7 +71,7 @@ public sealed class OrganizerPageTests
         var ev = await CreateEventAsync();
         await VoteAsync("bob@example.com", ev);
 
-        var html = await PageAsync("rocky@example.com", $"/events/{ev.Id}");
+        var html = await RenderAsync<EventDetails>("rocky@example.com", p => p.Add(e => e.Id, ev.Id));
 
         StringAssert.Contains(html, ev.Slots[0].OrganizerLocal);
         StringAssert.Contains(html, "Bob");
@@ -69,19 +85,19 @@ public sealed class OrganizerPageTests
     {
         var ev = await CreateEventAsync();
 
-        var participant = await PageAsync("bob@example.com", $"/events/{ev.Id}");
-        var stranger = await PageAsync("mallory@example.com", $"/events/{ev.Id}");
+        var participant = await RenderAsync<EventDetails>("bob@example.com", p => p.Add(e => e.Id, ev.Id));
+        var stranger = await RenderAsync<EventDetails>("mallory@example.com", p => p.Add(e => e.Id, ev.Id));
 
         StringAssert.Contains(participant, $"/e/{ev.ShortCode}");
         Assert.DoesNotContain("Cancel this event", participant);
         StringAssert.Contains(stranger, "no event here for you");
-        Assert.DoesNotContain("Planning", stranger.Replace("<title>Event</title>", ""));
+        Assert.DoesNotContain("Planning", stranger);
     }
 
     [TestMethod]
     public async Task The_compose_page_is_offered_to_organizers()
     {
-        var html = await PageAsync("rocky@example.com", "/events/new");
+        var html = await RenderAsync<NewEvent>("rocky@example.com");
 
         StringAssert.Contains(html, "Times that work for you");
         StringAssert.Contains(html, "Send invitations");
@@ -113,7 +129,8 @@ public sealed class OrganizerPageTests
         StringAssert.Contains(closed.Subject, "Voting closed: Planning");
     }
 
-    private async Task<string> PageAsync(string email, string path)
+    /// <summary>A page as the server first sends it (prerendered), signed in with the development sign-in.</summary>
+    private async Task<string> PrerenderAsync(string email, string path)
     {
         var browser = _app.CreateBrowser();
         await browser.Http.PostAsync("/dev/signin", new FormUrlEncodedContent(new Dictionary<string, string> { ["email"] = email }));
@@ -121,6 +138,24 @@ public sealed class OrganizerPageTests
         var html = WebUtility.HtmlDecode(await response.Content.ReadAsStringAsync());
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode, html);
         return html;
+    }
+
+    /// <summary>A page as it shows once interactive and loaded, signed in as <paramref name="email"/>.</summary>
+    private async Task<string> RenderAsync<TPage>(string email, Action<ComponentParameterCollectionBuilder<TPage>>? parameters = null)
+        where TPage : IComponent
+    {
+        using var scope = _app.Services.CreateScope();
+        await using var bunit = new BunitContext();
+        bunit.Services.AddFallbackServiceProvider(scope.ServiceProvider);
+        var auth = bunit.AddAuthorization();
+        auth.SetAuthorized(email);
+        auth.SetClaims(new Claim(ClaimTypes.Email, email));
+        bunit.JSInterop.Mode = JSRuntimeMode.Loose;
+        bunit.SetRendererInfo(new RendererInfo("Server", isInteractive: true));
+
+        var page = bunit.Render(parameters ?? (_ => { }));
+        page.WaitForAssertion(() => Assert.DoesNotContain("Loading", page.Markup));
+        return WebUtility.HtmlDecode(page.Markup);
     }
 
     private async Task<EventView> CreateEventAsync()
