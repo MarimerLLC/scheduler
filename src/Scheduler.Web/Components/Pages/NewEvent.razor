@@ -161,6 +161,11 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        // Prerendering only shows "Loading…"; the data loads once, when the page turns interactive. Loading it while
+        // prerendering as well would show it, then "Loading…" while the interactive copy loads it again (a flicker).
+        if (!RendererInfo.IsInteractive)
+            return;
+
         var state = AuthenticationState is null ? null : await AuthenticationState;
         _caller = CallerResolver.FromPrincipal(state?.User, Channel.Web);
         if (_caller is not null)
