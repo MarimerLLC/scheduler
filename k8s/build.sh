@@ -16,7 +16,8 @@ if [[ -n "$(git -C "$REPO_ROOT" status --porcelain)" ]]; then
 fi
 
 echo "Building $IMAGE_NAME:$TAG from $(git -C "$REPO_ROOT" rev-parse --short HEAD)..."
-docker build -t "$IMAGE_NAME:$TAG" "$REPO_ROOT"
+# The cluster's nodes are amd64; the Dockerfile cross-compiles, so this is quick on an ARM machine too.
+docker build --platform linux/amd64 -t "$IMAGE_NAME:$TAG" "$REPO_ROOT"
 
 echo ""
 echo "Pushing $IMAGE_NAME:$TAG..."
