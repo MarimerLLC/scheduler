@@ -7,7 +7,7 @@ How to run Scheduler on the `lhotkalake` cluster. The design and its reasons are
 |---|---|
 | Public URL | `https://scheduler.tail920062.ts.net`, through Tailscale Funnel (the same as threa) |
 | MCP endpoint | `https://scheduler.tail920062.ts.net/mcp` |
-| Image | `rockylhotka/scheduler:<version>` on Docker Hub, built and pushed locally (`k8s/build.sh`) |
+| Image | `rockylhotka/scheduler:<version>` on Docker Hub, `linux/amd64` like the cluster's nodes; built and pushed locally (`k8s/build.sh`, on an x64 or ARM machine) |
 | Namespace | `scheduler`; manifests in `k8s/`, applied by `k8s/deploy.sh` |
 | Database | `scheduler` on the shared PostgreSQL (`postgres.default.svc.cluster.local`) |
 | Email | sent as `scheduler@sched.marimer.llc` through an SMTP relay (Brevo's free plan by default) |
