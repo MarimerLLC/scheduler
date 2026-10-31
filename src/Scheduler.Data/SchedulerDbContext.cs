@@ -23,6 +23,7 @@ public sealed class SchedulerDbContext(DbContextOptions<SchedulerDbContext> opti
     public DbSet<OutboxEmail> Outbox => Set<OutboxEmail>();
     public DbSet<EmailSuppression> Suppressions => Set<EmailSuppression>();
     public DbSet<OrganizerGrant> OrganizerGrants => Set<OrganizerGrant>();
+    public DbSet<OrganizerRequest> OrganizerRequests => Set<OrganizerRequest>();
     public DbSet<PersonalAccessToken> PersonalAccessTokens => Set<PersonalAccessToken>();
     public DbSet<EmailVerification> EmailVerifications => Set<EmailVerification>();
     public DbSet<ServerSetting> ServerSettings => Set<ServerSetting>();
@@ -131,6 +132,19 @@ public sealed class SchedulerDbContext(DbContextOptions<SchedulerDbContext> opti
             e.Property(x => x.Pattern).HasMaxLength(OrganizerPatterns.MaxLength);
             e.Property(x => x.Note).HasMaxLength(FieldLimits.NoteMax);
             e.Property(x => x.GrantedBy).HasMaxLength(FieldLimits.EmailMax);
+        });
+
+        model.Entity<OrganizerRequest>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.Email).HasMaxLength(FieldLimits.EmailMax);
+            e.Property(x => x.Note).HasMaxLength(FieldLimits.NoteMax);
+            e.Property(x => x.Status).HasConversion<string>().HasMaxLength(16);
+            e.Property(x => x.DecidedBy).HasMaxLength(FieldLimits.EmailMax);
+            // One waiting request per address, even when two arrive at once.
+            e.HasIndex(x => x.Email).IsUnique().HasFilter("\"Status\" = 'Pending'");
+            e.HasIndex(x => new { x.Status, x.CreatedAt });
         });
 
         model.Entity<EmailSuppression>(e =>

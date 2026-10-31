@@ -50,6 +50,14 @@ public enum OutboxStatus
     Failed
 }
 
+/// <summary>Where a request to organize stands.</summary>
+public enum OrganizerRequestStatus
+{
+    Pending,
+    Approved,
+    Declined
+}
+
 /// <summary>Why an address is on the suppression list.</summary>
 public enum SuppressionReason
 {

@@ -42,6 +42,18 @@ public interface IEmailComposer
 
     /// <summary>To an address a sign-in provider didn't verify: a link that finishes signing in.</summary>
     Task<ComposedEmail> SignInLinkAsync(string email, string link);
+
+    /// <summary>
+    /// To each admin: someone asked to organize. Never carries the requester's note: the admin reads that on the
+    /// page, so whatever a stranger writes doesn't land in an inbox.
+    /// </summary>
+    Task<ComposedEmail> OrganizerRequestWaitingAsync(string requester, string reviewUrl);
+
+    /// <summary>To the requester: an admin approved their request to organize.</summary>
+    Task<ComposedEmail> OrganizerRequestApprovedAsync(string email, string newEventUrl);
+
+    /// <summary>To the requester: an admin declined their request; they can ask again from <paramref name="canAskAgainAt"/>.</summary>
+    Task<ComposedEmail> OrganizerRequestDeclinedAsync(string email, string canAskAgainAt);
 }
 
 /// <summary>

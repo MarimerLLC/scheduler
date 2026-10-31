@@ -40,7 +40,7 @@ public sealed class SchedulingService(
 
         var account = await FindAccountAsync(db, caller, cancellationToken);
         if (!await OrganizerPolicy.CanOrganizeAsync(db, Options, OwnEmails(caller, account), cancellationToken))
-            throw new SchedulingForbiddenException("You aren't on this server's list of organizers. Ask its administrator to add you.");
+            throw new SchedulingForbiddenException("You aren't on this server's list of organizers. Ask its admins to add you (the request_to_organize tool, or the page /ask-to-organize).");
         account ??= await ProvisionAccountAsync(db, caller, now, cancellationToken);
 
         if (request.DurationMinutes is < FieldLimits.MinDurationMinutes or > FieldLimits.MaxDurationMinutes)

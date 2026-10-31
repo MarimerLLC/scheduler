@@ -29,9 +29,17 @@ public sealed record McpVote(
 public sealed class SchedulingTools(ISchedulingService scheduling, IAdminService admin, IHttpContextAccessor http)
 {
     [McpServerTool(Name = "get_my_access", Title = "What can I do here?", ReadOnly = true, Idempotent = true, OpenWorld = false)]
-    [Description("Shows the user's verified addresses on this server and whether they may create scheduling events (canOrganize) or administer the server (isAdmin). Anyone invited to an event can vote without being an organizer.")]
+    [Description("Shows the user's verified addresses on this server and whether they may create scheduling events (canOrganize) or administer the server (isAdmin). Anyone invited to an event can vote without being an organizer. organizerRequest is the user's request to organize that is waiting, or was declined too recently to ask again.")]
     public Task<string> GetMyAccess(CancellationToken cancellationToken = default) =>
         Run(caller => admin.GetAccessAsync(caller, cancellationToken));
+
+    [McpServerTool(Name = "request_to_organize", Title = "Ask to organize", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
+    [Description("Asks this server's admins to let the user create scheduling events, for someone whose get_my_access shows canOrganize false. An admin approves or declines it; the user gets an email either way. Asking again while a request waits returns that request. Confirm with the user first, and send only a note the user wrote or approved.")]
+    public Task<string> RequestToOrganize(
+        [Description("Optional short note to the admins saying who the user is and why, at most 280 characters, one line, no links.")] string? note = null,
+        [Description("Optional: which of the user's verified addresses should organize. Defaults to the one they signed in with.")] string? email = null,
+        CancellationToken cancellationToken = default) =>
+        Run(caller => admin.RequestToOrganizeAsync(caller, email, note, cancellationToken));
 
     [McpServerTool(Name = "create_event", Title = "Create scheduling event", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = true)]
     [Description("Start scheduling a meeting: proposes candidate times that already work for the organizer and emails each participant a request to vote. Only allowlisted organizers can create events. Returns the event, including its id and shortCode.")]

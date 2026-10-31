@@ -42,6 +42,21 @@ public sealed class SchedulingOptions
     /// </summary>
     public int MaxInvitationsPerDay { get; set; } = 200;
 
+    /// <summary>
+    /// Days after an admin declines someone's request to organize before that person can ask again. Decided
+    /// requests are deleted after this long. See docs/design.md, "Requests to organize".
+    /// </summary>
+    public int OrganizerRequestCooldownDays { get; set; } = 30;
+
+    /// <summary>Requests to organize that may wait at once; beyond it new requests are refused, so a flood can't bury the admins.</summary>
+    public int MaxPendingOrganizerRequests { get; set; } = 50;
+
+    /// <summary>Words or phrases a request note may not contain, on top of the built-in list (<c>RequestNotes</c>).</summary>
+    public List<string> BlockedNoteTerms { get; set; } = [];
+
+    /// <summary>Words the built-in list would refuse that a request note may contain here.</summary>
+    public List<string> AllowedNoteTerms { get; set; } = [];
+
     /// <summary>Whether a configured entry lets <paramref name="email"/> organize.</summary>
     public bool IsAllowlistedOrganizer(string email)
     {

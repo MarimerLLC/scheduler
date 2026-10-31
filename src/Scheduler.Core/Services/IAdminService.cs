@@ -1,3 +1,5 @@
+using Scheduler.Core.Model;
+
 namespace Scheduler.Core.Services;
 
 /// <summary>Where an organizer entry comes from.</summary>
@@ -17,17 +19,53 @@ public sealed record OrganizerEntry(
     string? GrantedBy,
     string? GrantedAt);
 
-/// <summary>What the caller may do on this server. Lets the UI and agents explain a refusal up front.</summary>
-public sealed record CallerAccess(IReadOnlyList<string> Emails, bool CanOrganize, bool IsAdmin);
+/// <summary>
+/// A request to organize. <see cref="Note"/> is the requester's own words, already checked by
+/// <c>RequestNotes</c>; show it as quoted data. <see cref="CanAskAgainAt"/> is set on a declined request.
+/// </summary>
+public sealed record OrganizerRequestView(
+    Guid Id,
+    string Email,
+    string? Note,
+    OrganizerRequestStatus Status,
+    string RequestedAt,
+    string? DecidedBy,
+    string? DecidedAt,
+    string? CanAskAgainAt);
 
 /// <summary>
-/// Server administration: who may organize. Every method except <see cref="GetAccessAsync"/> requires an
-/// admin caller (<see cref="SchedulingOptions.Admins"/>) and throws <see cref="SchedulingForbiddenException"/>
-/// otherwise. Changes are audited.
+/// What the caller may do on this server. Lets the UI and agents explain a refusal up front.
+/// <see cref="OrganizerRequest"/> is the caller's waiting request, or one declined so recently they can't ask again yet.
+/// </summary>
+public sealed record CallerAccess(IReadOnlyList<string> Emails, bool CanOrganize, bool IsAdmin, OrganizerRequestView? OrganizerRequest = null);
+
+/// <summary>
+/// Server administration: who may organize. Every method except <see cref="GetAccessAsync"/> and
+/// <see cref="RequestToOrganizeAsync"/> requires an admin caller (<see cref="SchedulingOptions.Admins"/>) and throws
+/// <see cref="SchedulingForbiddenException"/> otherwise. Changes are audited.
 /// </summary>
 public interface IAdminService
 {
     Task<CallerAccess> GetAccessAsync(CallerIdentity caller, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Any signed-in caller (not by voting link) who can't organize yet: asks the admins to let
+    /// <paramref name="email"/> (one of the caller's addresses; the first if null) organize. The note is checked by
+    /// <c>RequestNotes</c>. Asking while a request waits returns that request unchanged. Refused for a while after
+    /// a decline (<see cref="SchedulingOptions.OrganizerRequestCooldownDays"/>), and while
+    /// <see cref="SchedulingOptions.MaxPendingOrganizerRequests"/> requests wait. The admins are emailed, without the
+    /// note, when the first request starts waiting.
+    /// </summary>
+    Task<OrganizerRequestView> RequestToOrganizeAsync(CallerIdentity caller, string? email, string? note, CancellationToken cancellationToken);
+
+    /// <summary>Waiting requests, oldest first.</summary>
+    Task<IReadOnlyList<OrganizerRequestView>> ListOrganizerRequestsAsync(CallerIdentity caller, CancellationToken cancellationToken);
+
+    /// <summary>Grants the request's address (as <see cref="AddOrganizerAsync"/> would) and emails the requester.</summary>
+    Task<OrganizerRequestView> ApproveOrganizerRequestAsync(CallerIdentity caller, Guid requestId, CancellationToken cancellationToken);
+
+    /// <summary>Declines the request and emails the requester, who can't ask again for a while.</summary>
+    Task<OrganizerRequestView> DeclineOrganizerRequestAsync(CallerIdentity caller, Guid requestId, CancellationToken cancellationToken);
 
     /// <summary>Configured entries first, then granted ones, each sorted.</summary>
     Task<IReadOnlyList<OrganizerEntry>> ListOrganizersAsync(CallerIdentity caller, CancellationToken cancellationToken);

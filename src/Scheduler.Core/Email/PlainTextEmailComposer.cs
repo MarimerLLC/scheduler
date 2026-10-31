@@ -122,6 +122,33 @@ public sealed class PlainTextEmailComposer(string mcpUrl, IUnsubscribeLinks? uns
         return new ComposedEmail(SignInLinkSubject, body.ToString());
     }
 
+    public ComposedEmail OrganizerRequestWaiting(string requester, string reviewUrl)
+    {
+        var body = new StringBuilder();
+        body.AppendLine(OrganizerRequestWaitingIntro(requester));
+        body.AppendLine();
+        body.AppendLine("Approve or decline it on the Organizers page:");
+        body.AppendLine($"  {reviewUrl}");
+        body.AppendLine();
+        body.AppendLine(OrganizerRequestWaitingClosing);
+        return new ComposedEmail(OrganizerRequestWaitingSubject, body.ToString());
+    }
+
+    public ComposedEmail OrganizerRequestApproved(string email, string newEventUrl)
+    {
+        var body = new StringBuilder();
+        body.AppendLine(OrganizerRequestApprovedIntro(email));
+        body.AppendLine();
+        body.AppendLine("Schedule a meeting here:");
+        body.AppendLine($"  {newEventUrl}");
+        body.AppendLine();
+        body.AppendLine($"Or ask your assistant, with this server's MCP endpoint as a connector: {mcpUrl}");
+        return new ComposedEmail(OrganizerRequestApprovedSubject, body.ToString());
+    }
+
+    public ComposedEmail OrganizerRequestDeclined(string email, string canAskAgainAt) =>
+        new(OrganizerRequestDeclinedSubject, OrganizerRequestDeclinedText(email, canAskAgainAt) + Environment.NewLine);
+
     Task<ComposedEmail> IEmailComposer.InvitationAsync(SchedulingEvent ev, Participant recipient, string votingUrl) =>
         Task.FromResult(Invitation(ev, recipient, votingUrl));
 
@@ -152,7 +179,36 @@ public sealed class PlainTextEmailComposer(string mcpUrl, IUnsubscribeLinks? uns
     Task<ComposedEmail> IEmailComposer.SignInLinkAsync(string email, string link) =>
         Task.FromResult(SignInLink(email, link));
 
+    Task<ComposedEmail> IEmailComposer.OrganizerRequestWaitingAsync(string requester, string reviewUrl) =>
+        Task.FromResult(OrganizerRequestWaiting(requester, reviewUrl));
+
+    Task<ComposedEmail> IEmailComposer.OrganizerRequestApprovedAsync(string email, string newEventUrl) =>
+        Task.FromResult(OrganizerRequestApproved(email, newEventUrl));
+
+    Task<ComposedEmail> IEmailComposer.OrganizerRequestDeclinedAsync(string email, string canAskAgainAt) =>
+        Task.FromResult(OrganizerRequestDeclined(email, canAskAgainAt));
+
     // ── Wording shared with the HTML composer ───────────────────────────────
+
+    public const string OrganizerRequestWaitingSubject = "A request to organize is waiting on the scheduling server";
+
+    public static string OrganizerRequestWaitingIntro(string requester) =>
+        $"{requester} has asked to create scheduling events on this server.";
+
+    public const string OrganizerRequestWaitingClosing =
+        "You're getting this because you're an admin. Any note they wrote is shown only on the page. " +
+        "This server emails the admins when a request arrives and none was already waiting, so check the page for others.";
+
+    public const string OrganizerRequestApprovedSubject = "You can now schedule meetings on the scheduling server";
+
+    public static string OrganizerRequestApprovedIntro(string email) =>
+        $"An admin approved your request: {email} can now create scheduling events.";
+
+    public const string OrganizerRequestDeclinedSubject = "Your request to organize on the scheduling server";
+
+    public static string OrganizerRequestDeclinedText(string email, string canAskAgainAt) =>
+        $"An admin declined the request for {email} to create scheduling events. You can still vote on any meeting " +
+        $"you're invited to. If you think this was a mistake, you can ask again from {canAskAgainAt}.";
 
     public const string FinalizedClosing = "A calendar invitation will come from the organizer's calendar. Accept or decline it there.";
 

@@ -117,6 +117,13 @@ public sealed class SchedulingJobs(
         var draftsBefore = now - Duration.FromDays(Options.DraftRetentionDays);
 
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+
+        // Decided requests to organize are kept as long as a decline stops the person asking again.
+        var decidedBefore = now - Duration.FromDays(Options.OrganizerRequestCooldownDays);
+        await db.OrganizerRequests
+            .Where(r => r.Status != OrganizerRequestStatus.Pending && r.DecidedAt < decidedBefore)
+            .ExecuteDeleteAsync(cancellationToken);
+
         var ids = await db.Events
             .Where(e => (e.State != EventState.Open && e.State != EventState.Draft && e.ClosedAt != null && e.ClosedAt < closedBefore)
                 || (e.State == EventState.Draft && e.UpdatedAt < draftsBefore))

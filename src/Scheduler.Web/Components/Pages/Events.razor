@@ -58,7 +58,11 @@ else
     @if (_organizing.Count == 0)
     {
         <p class="hint">
-            You don't organize any events@(_access is { CanOrganize: true } ? "" : ", and this server's administrator hasn't added you as an organizer").
+            You don't organize any events@(_access is { CanOrganize: true } ? "." : ", and this server's admins haven't added you as an organizer.")
+            @if (_access is { CanOrganize: false })
+            {
+                <a href="/ask-to-organize">@(_access.OrganizerRequest is null ? "Ask to organize" : "Your request to organize")</a>
+            }
         </p>
     }
     else

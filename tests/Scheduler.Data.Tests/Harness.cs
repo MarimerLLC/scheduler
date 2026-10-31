@@ -41,7 +41,7 @@ internal sealed class Harness
         Service = new SchedulingService(db, clock, options, links, composer, Changes);
         Jobs = new SchedulingJobs(db, clock, options, links, composer, Changes);
         Subscriptions = new SubscriptionService(db, clock, options, composer);
-        AdminService = new AdminService(db, clock, options);
+        AdminService = new AdminService(db, clock, options, composer);
         AccessTokens = new AccessTokenService(db, clock);
         Accounts = new AccountService(db, clock, options, new PlainTextEmailComposer(BaseUrl + "/mcp"));
     }

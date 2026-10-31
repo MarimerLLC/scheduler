@@ -28,6 +28,52 @@ else if (_access is not { IsAdmin: true })
 }
 else
 {
+    @if (_message is not null)
+    {
+        <p class="@(_isError ? "message error" : "message")" role="status">@_message</p>
+    }
+
+    <h2>Requests to organize</h2>
+    @if (_requests.Count == 0)
+    {
+        <p class="hint">No requests are waiting.</p>
+    }
+    else
+    {
+        <p class="hint">
+            Notes are the requester's own words, not checked by anyone yet. Approving adds their address to the list below
+            and emails them; declining emails them and stops them asking again for a while.
+        </p>
+        <table class="list requests">
+            <thead>
+                <tr><th>Address</th><th>Note</th><th>Asked</th><th></th></tr>
+            </thead>
+            <tbody>
+                @foreach (var request in _requests)
+                {
+                    <tr>
+                        <td>@request.Email</td>
+                        <td class="request-note" data-label="Note">@request.Note</td>
+                        <td data-label="Asked">@request.RequestedAt</td>
+                        <td>
+                            <button disabled="@_busy" @onclick="() => ApproveAsync(request)">Approve</button>
+                            @if (_confirmDecline == request.Id)
+                            {
+                                <button class="danger" disabled="@_busy" @onclick="() => DeclineAsync(request)">Confirm decline</button>
+                                <button disabled="@_busy" @onclick="() => _confirmDecline = null">Keep</button>
+                            }
+                            else
+                            {
+                                <button disabled="@_busy" @onclick="() => _confirmDecline = request.Id">Decline</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    <h2>Organizers</h2>
     <p>
         People on this list can create scheduling events. Anyone invited to an event can vote without being on it.
         Removing someone stops them creating new events; events they already organize stay theirs.
@@ -44,11 +90,6 @@ else
         </label>
         <button type="submit" disabled="@_busy">Add</button>
     </EditForm>
-
-    @if (_message is not null)
-    {
-        <p class="@(_isError ? "message error" : "message")" role="status">@_message</p>
-    }
 
     <table class="list">
         <thead>
@@ -97,9 +138,11 @@ else
     private CallerIdentity? _caller;
     private CallerAccess? _access;
     private IReadOnlyList<OrganizerEntry> _entries = [];
+    private IReadOnlyList<OrganizerRequestView> _requests = [];
     private bool _loading = true;
     private bool _busy;
     private string? _confirmRemove;
+    private Guid? _confirmDecline;
     private string? _message;
     private bool _isError;
 
@@ -116,9 +159,33 @@ else
         {
             _access = await Admin.GetAccessAsync(_caller, CancellationToken.None);
             if (_access.IsAdmin)
-                _entries = await Admin.ListOrganizersAsync(_caller, CancellationToken.None);
+                await LoadListsAsync();
         }
         _loading = false;
+    }
+
+    private async Task LoadListsAsync()
+    {
+        _requests = await Admin.ListOrganizerRequestsAsync(_caller!, CancellationToken.None);
+        _entries = await Admin.ListOrganizersAsync(_caller!, CancellationToken.None);
+    }
+
+    private async Task ApproveAsync(OrganizerRequestView request)
+    {
+        await RunAsync(async () =>
+        {
+            await Admin.ApproveOrganizerRequestAsync(_caller!, request.Id, CancellationToken.None);
+            return $"{request.Email} can now organize, and has been emailed.";
+        });
+    }
+
+    private async Task DeclineAsync(OrganizerRequestView request)
+    {
+        await RunAsync(async () =>
+        {
+            await Admin.DeclineOrganizerRequestAsync(_caller!, request.Id, CancellationToken.None);
+            return $"Declined the request from {request.Email}, who has been emailed.";
+        });
     }
 
     private async Task AddAsync()
@@ -147,7 +214,6 @@ else
         {
             _message = await action();
             _isError = false;
-            _entries = await Admin.ListOrganizersAsync(_caller!, CancellationToken.None);
         }
         catch (SchedulingException ex)
         {
@@ -156,8 +222,11 @@ else
         }
         finally
         {
+            // Reload either way: a refusal may mean another admin changed something.
+            await LoadListsAsync();
             _busy = false;
             _confirmRemove = null;
+            _confirmDecline = null;
         }
     }
 }

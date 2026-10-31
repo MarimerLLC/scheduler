@@ -452,10 +452,14 @@ meant for the caller come back as tool errors with a specific message.
 | `finalize_event` | Organizer | open-world | Picks the slot, emails everyone, returns `localStart`, `timeZone`, `durationMinutes`, `attendeeEmails` for creating the calendar event. Needs `version`. The agent should re-check the organizer's calendar first. |
 | `cancel_event` | Organizer | destructive, open-world | Cancels; emails everyone who was invited, with the optional reason. |
 | `record_calendar_event` | Organizer | idempotent | Stores the iCalendar UID of the meeting the agent created, after finalizing. |
-| `get_my_access` | Anyone signed in | read-only | The caller's verified addresses, and whether they may organize or administer. |
+| `get_my_access` | Anyone signed in | read-only | The caller's verified addresses, whether they may organize or administer, and their waiting (or recently declined) request to organize. |
+| `request_to_organize` | Anyone signed in who can't organize | idempotent | Asks the admins to let one of the caller's addresses organize, with an optional checked note. See [Requests to organize](#requests-to-organize). |
 | `list_organizers` | Admin (hidden from others) | read-only | The organizer allowlist with each entry's source. See [Administration](#administration). |
 | `add_organizer` | Admin (hidden from others) | idempotent | Grants an address or `*@domain`. |
 | `remove_organizer` | Admin (hidden from others) | destructive | Removes a grant; existing events are unaffected. |
+| `list_organizer_requests` | Admin (hidden from others) | read-only | Waiting requests to organize, oldest first. |
+| `approve_organizer_request` | Admin (hidden from others) | open-world | Grants the request's address and emails the requester. |
+| `decline_organizer_request` | Admin (hidden from others) | destructive, open-world | Declines and emails the requester, who can't ask again for a while. |
 
 ### Prompts
 
@@ -506,7 +510,8 @@ Blazor with per-page render modes.
 | `/account` | InteractiveServer | Verified addresses (add by email link, remove), personal access tokens. |
 | `/signin/email` | Static SSR with a form post | Offers to email a sign-in link to an address the provider didn't verify. |
 | `/verify?t=...` | Static SSR with a form post | Confirms an emailed link: signs in, or adds the address to the signed-in account. |
-| `/admin/organizers` | InteractiveServer | Admins: manage the organizer allowlist. See [Administration](#administration). |
+| `/ask-to-organize` | InteractiveServer | Ask the admins to be allowed to organize, like `request_to_organize`; shows a waiting or declined request. Linked from `/events/new` and `/events` for people who can't organize. |
+| `/admin/organizers` | InteractiveServer | Admins: approve or decline requests to organize, and manage the organizer allowlist. See [Administration](#administration). |
 | `/unsubscribe?t=...` | Static SSR with form posts | Asks before unsubscribing (mail scanners fetch links); can undo an unsubscribe. |
 | `/unsubscribe/one-click?t=...` | Endpoint | The List-Unsubscribe URL: RFC 8058 POST unsubscribes (no cookies or antiforgery token); GET redirects to the page. |
 
@@ -588,7 +593,7 @@ call, safe to repeat, audited as the system); `SchedulingJobRunner` runs them on
 | Outbox dispatcher | 15 s | Sends due emails (implemented) |
 | Deadline | 5 min | Expires open events past respond-by; emails the organizer |
 | Reminders | 15 min | One reminder per participant who hasn't answered every time, once the deadline is within `Scheduler:ReminderLeadHours` (24). Once per deadline: a new deadline gets a new reminder. Not for someone invited after that window opened; they just got the invitation |
-| Retention purge | Daily | Deletes events closed more than `Scheduler:RetentionDays` (30) ago, with their slots, participants, votes, audit and outbox rows; deletes drafts untouched for `Scheduler:DraftRetentionDays` (7) |
+| Retention purge | Daily | Deletes events closed more than `Scheduler:RetentionDays` (30) ago, with their slots, participants, votes, audit and outbox rows; deletes drafts untouched for `Scheduler:DraftRetentionDays` (7), and requests to organize decided more than `Scheduler:OrganizerRequestCooldownDays` (30) ago |
 | Identity cleanup | Hourly | Prunes OAuth tokens and authorizations that lapsed over 14 days ago (OpenIddict's pruning); deletes dynamically registered clients with no authorization or token a day after registering, and expired address links (implemented) |
 | tzdb check | On startup | If the tzdb version changed (kept in `ServerSettings`), recompute `Start` from local time and zone for every future slot of an event that isn't cancelled; a time the new rules skip moves forward rather than being lost |
 
@@ -622,19 +627,65 @@ A caller may organize if any of their verified addresses, or its domain, matches
   says to change `Scheduler:Organizers`.
 - Every add and remove is audited (`organizer.added`, `organizer.removed`) with no event ID.
 
+### Requests to organize
+
+Someone who signs in but can't organize can ask to (`IAdminService.RequestToOrganizeAsync`), from
+`/ask-to-organize` or the `request_to_organize` tool. An admin approves or declines it.
+
+- **Who can ask**: any signed-in caller (not a voting link) who can't organize yet, for one of their own
+  verified addresses (the one they signed in with by default). There is one waiting request per address (a
+  unique index); asking again while one waits returns it unchanged.
+- **Approving** grants the exact address, as `add_organizer` would, with the note `By request: <their note>`
+  (an existing grant is kept as it is), and emails the requester a link to `/events/new`.
+- **Declining** emails the requester, neutrally and without a reason, and stops every address of theirs asking
+  again for `Scheduler:OrganizerRequestCooldownDays` (30). The refusal says when they can.
+- A request is decided once: two admins acting at the same moment can't both act on it, and the second is
+  told who decided it.
+- **Admins are emailed** (a link to `/admin/organizers`, the requester's address, never the note) when a
+  request arrives and none was already waiting. A burst of requests sends one email per admin, not one per request.
+- **Flood limit**: at most `Scheduler:MaxPendingOrganizerRequests` (50) wait at once; beyond that new requests
+  are refused with "try again in a few days". Together with sign-in (a verified address per request) and
+  the cooldown, that bounds what a spammer can put in front of the admins.
+- **Retention**: decided requests are deleted by the daily purge once the cooldown ends; waiting ones stay until
+  an admin decides. Audit entries (`organizer.requested`, `organizer.request.approved`,
+  `organizer.request.declined`) carry the request ID and address, not the note.
+
+#### The note
+
+The note is the only text a stranger can put in front of an admin, so `RequestNotes.Clean` holds it to stricter
+rules than event text. It is normalized (NFKC, so full-width letters and ligatures become plain ones), collapsed
+to one line, and refused if it:
+
+- is over 280 characters (`FieldLimits.NoteMax`);
+- contains a link: a scheme (`https://`), `www.`, or a host followed by a path (`example.com/x`). Bare names
+  like `contoso.com` or `ASP.NET` are allowed;
+- contains control, format (zero-width, bidi override), private-use or unassigned characters, or broken UTF-16;
+- stacks more than two accents on one letter ("zalgo" text) or repeats one character more than seven times;
+- contains a blocked word. The list is the `Profanity.Detector` package's, minus ordinary words and words for
+  who someone is (`RequestNotes.DefaultAllowedTerms`: "queer", "kill", "god"...), plus
+  `Scheduler:BlockedNoteTerms` (words or phrases), minus `Scheduler:AllowedNoteTerms`. Words are compared in
+  lower case without accents, also with digits read as letters (`5h1t`) and spaced-out letters joined (`s h i t`).
+
+A refusal names the rule, never the word, and the request isn't saved. The admin page shows the note as text
+(never markup) that wraps, under a line saying it is the requester's own words; MCP tool descriptions tell the
+admin's agent to treat it as data. A determined person can still write something rude in plain words that no
+list catches; the limits above keep that to one short line, from a verified address, that can be declined.
+
 ### Through an agent
 
-Three MCP tools, `list_organizers`, `add_organizer` and `remove_organizer`, **listed only to admins**. A
+Six MCP tools, `list_organizers`, `add_organizer`, `remove_organizer`, `list_organizer_requests`,
+`approve_organizer_request` and `decline_organizer_request`, **listed only to admins**. A
 `tools/list` filter removes them for everyone else. The list then differs per caller, so it is returned with
 `cacheScope: private` (a shared gateway must not serve one user's list to another). Calling an admin tool
 without being an admin is still refused by `IAdminService`: hiding is a convenience, not the check.
 
 Everyone also gets `get_my_access`, which reports the caller's verified addresses and whether they may
-organize or administer, so an agent can explain a refusal before it happens.
+organize or administer, so an agent can explain a refusal before it happens, and `request_to_organize`.
 
 ### Through the web UI
 
-`/admin/organizers` (InteractiveServer): the combined list with each entry's source, note and who added it
+`/admin/organizers` (InteractiveServer): waiting requests to organize first, each with approve and decline (with
+a confirm step); then the combined list with each entry's source, note and who added it
 when; a form to add an address or domain; and remove, with a confirm step, on granted entries. Configured
 entries show no remove button. Signed-out visitors are asked to sign in; signed-in non-admins are told the
 page is for admins.
@@ -646,7 +697,7 @@ page is for admins.
 The server sends email to addresses it is given, so an open `create_event` would be a spam relay.
 
 - Only allowlisted organizers can create events: a configured entry (`Scheduler:Organizers`) or an admin's
-  grant (see [Administration](#administration)). An allowlisted caller's first `create_event` provisions a
+  grant (see [Administration](#administration)). Anyone signed in can ask an admin for a grant ([Requests to organize](#requests-to-organize)). An allowlisted caller's first `create_event` provisions a
   `UserAccount` owning their verified addresses that no other account has claimed.
 - Rate limits (ASP.NET Core rate limiting, `RateLimits`, configurable under `RateLimits`): `/mcp` 120
   requests per minute per caller (account or address; it runs after authorization, so the caller is known);
@@ -694,7 +745,7 @@ which has that person's mail and calendar tools.
 `AuditEntry` rows record actions such as `event.created`, `vote.cast`, `slot.withdrawn`,
 `event.finalized`, `email.bounced`, with the actor's address (or none, for the system) and the channel
 (`mcp`, `web`, `email`, `system`). Useful for "why was this finalized?" and for debugging agent behavior.
-Purged with the event. Admin actions (`organizer.added`, `organizer.removed`), token changes
+Purged with the event. Admin actions (`organizer.added`, `organizer.removed`, `organizer.requested`, `organizer.request.approved`, `organizer.request.declined`), token changes
 (`token.created`, `token.revoked`) and address changes (`address.requested`, `address.added`,
 `address.removed`) have no event and are kept.
 
