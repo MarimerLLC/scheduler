@@ -229,7 +229,7 @@ public sealed class OrganizerRequestTests
             audit.Select(a => a.Action).ToArray());
         Assert.AreEqual("bob@example.com", audit[0].Actor);
         Assert.IsTrue(audit.Skip(1).All(a => a.Actor == "admin@example.com"));
-        Assert.IsTrue(audit.All(a => a.EventId is null && !a.Detail.Contains("Contoso PM")));
+        Assert.IsTrue(audit.All(a => a.EventId is null && a.Detail?.Contains("Contoso PM") != true));
     }
 
     [TestMethod]

@@ -383,18 +383,41 @@ public sealed class SchedulingService(
     }
 
     /// <summary>
-    /// A new account owning the caller's unclaimed verified addresses: on an allowlisted organizer's first event,
-    /// or a person's first personal access token. The caller saves it.
+    /// A new account owning the caller's verified addresses: on an allowlisted organizer's first event, a person's
+    /// first personal access token, or their first added address. It is saved here, on its own, so concurrent first
+    /// calls share one account; call it before tracking anything else. If another request claimed one of the
+    /// addresses after the caller's lookup, that request's account is returned instead.
     /// </summary>
     internal static async Task<UserAccount> ProvisionAccountAsync(SchedulerDbContext db, CallerIdentity caller, Instant now, CancellationToken cancellationToken)
     {
-        var account = new UserAccount { CreatedAt = now };
         var emails = caller.VerifiedEmails.ToList();
-        var claimed = await db.UserEmails.Where(e => emails.Contains(e.Email)).Select(e => e.Email).ToListAsync(cancellationToken);
-        foreach (var email in emails.Except(claimed))
-            account.Emails.Add(new UserEmail { Email = email, UserId = account.Id, VerifiedAt = now });
-        db.Users.Add(account);
-        return account;
+        if (!await db.UserEmails.AnyAsync(e => emails.Contains(e.Email), cancellationToken))
+        {
+            var account = new UserAccount { CreatedAt = now };
+            foreach (var email in emails)
+                account.Emails.Add(new UserEmail { Email = email, UserId = account.Id, VerifiedAt = now });
+            db.Users.Add(account);
+            try
+            {
+                await db.SaveChangesAsync(cancellationToken);
+                return account;
+            }
+            catch (DbUpdateException)
+            {
+                // Another request provisioned the same person at the same moment: share its account.
+                foreach (var email in account.Emails.ToList())
+                    db.Entry(email).State = EntityState.Detached;
+                db.Entry(account).State = EntityState.Detached;
+                var winner = await FindAccountAsync(db, caller, cancellationToken);
+                if (winner is null)
+                    throw;
+                return winner;
+            }
+        }
+
+        // A concurrent first call claimed an address after the caller looked: never start a second account.
+        return await FindAccountAsync(db, caller, cancellationToken)
+            ?? throw new InvalidOperationException("The caller's addresses are claimed, but no account owns them.");
     }
 
     /// <summary>Tells the organizer which invitees won't get the email, because they unsubscribed or bounced.</summary>
