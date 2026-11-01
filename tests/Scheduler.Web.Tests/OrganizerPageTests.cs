@@ -75,7 +75,7 @@ public sealed class OrganizerPageTests
 
         StringAssert.Contains(html, ev.Slots[0].OrganizerLocal);
         StringAssert.Contains(html, "Bob");
-        StringAssert.Contains(html, "Works");
+        StringAssert.Contains(html, "<th>Preferred</th><th>Yes</th><th>If necessary</th><th>No</th>");
         StringAssert.Contains(html, "Propose more times");
         StringAssert.Contains(html, "Cancel this event");
     }

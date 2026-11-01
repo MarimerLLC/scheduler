@@ -10,7 +10,8 @@ internal static class SchedulerMcpOptions
     private const string Instructions = """
         This server coordinates meeting times between people. It never reads anyone's calendar.
         The organizer proposes candidate times that already work for them; everyone invited votes
-        preferred, if_necessary or no on each one. Use your own calendar tools to check the user's calendar.
+        preferred, yes, if_necessary or no on each one. Only no rules a time out; if_necessary means the person
+        could make it but it would be painful. Use your own calendar tools to check the user's calendar.
 
         Scheduling a meeting (the user is the organizer):
         1. Check the user's calendar and pick 5-12 candidate start times that work for them.
@@ -18,8 +19,10 @@ internal static class SchedulerMcpOptions
         3. Call create_event. Give each start as local wall time plus an IANA time zone,
            e.g. start "2026-11-03T10:00", time_zone "America/Chicago". Don't work out UTC offsets yourself;
            the server converts, and rejects an offset that doesn't match the zone on that date.
-        4. Later, call get_event to see the tally. When ready, call finalize_event, create the meeting in the
-           user's own calendar using the returned local start and time zone, then call record_calendar_event.
+        4. Later, call get_event to see the tally. Recommend a slot with an if_necessary vote only when it is
+           the only way to make any time work, and tell the user who would be stretched by it. When ready, call
+           finalize_event, create the meeting in the user's own calendar using the returned local start and
+           time zone, then call record_calendar_event.
 
         Answering a request (the user was invited):
         1. Call list_my_events; by default it returns the events waiting for the user's vote.

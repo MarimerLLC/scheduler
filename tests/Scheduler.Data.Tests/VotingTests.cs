@@ -22,9 +22,22 @@ public sealed class VotingTests
         var view = await _h.VoteAsync(Harness.Bob, ev, (0, VoteValue.No));
 
         Assert.AreEqual(VoteValue.No, view.Slots[0].MyVote);
-        Assert.AreEqual(new SlotTally(0, 0, 1, 2), view.Slots[0].Tally);
+        Assert.AreEqual(new SlotTally(0, 0, 0, 1, 2), view.Slots[0].Tally);
         await using var db = await _h.Db.CreateDbContextAsync();
         Assert.AreEqual(1, await db.Votes.CountAsync());
+    }
+
+    [TestMethod]
+    public async Task AYesVoteIsStoredAndTallied()
+    {
+        var ev = await _h.CreateAsync();
+
+        var view = await _h.VoteAsync(Harness.Bob, ev, (0, VoteValue.Yes));
+
+        Assert.AreEqual(VoteValue.Yes, view.Slots[0].MyVote);
+        Assert.AreEqual(new SlotTally(0, 1, 0, 0, 2), view.Slots[0].Tally);
+        await using var db = await _h.Db.CreateDbContextAsync();
+        Assert.AreEqual(VoteValue.Yes, (await db.Votes.SingleAsync()).Value);
     }
 
     [TestMethod]

@@ -3,7 +3,7 @@
 Find a meeting time across people and organizations without anyone sharing their calendar.
 
 The organizer (or their AI agent) proposes candidate times that already work for them. Everyone invited
-votes **preferred**, **if necessary** or **no** on each time, from whichever MCP-capable agent they use
+votes **preferred**, **yes**, **if necessary** or **no** on each time, from whichever MCP-capable agent they use
 (Claude Desktop, Claude Code, GitHub Copilot, RockBot, ...) or from a web page linked in the invitation
 email. The server never reads a calendar: each person's own agent checks their own calendar, and the
 server only ever learns the votes.

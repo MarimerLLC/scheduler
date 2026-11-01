@@ -72,10 +72,10 @@ else
     }
 
     <h2>Times</h2>
-    <p class="hint">Best first: fewest "can't" from required people, then most "works". A time a required person can't make is marked.</p>
+    <p class="hint">Best first: fewest "no" and "if necessary" from required people, then from optional people, then most "preferred". A time a required person said no to is marked.</p>
     <table class="list slots">
         <thead>
-            <tr><th>#</th><th>Time</th><th>Works</th><th>If necessary</th><th>Can't</th><th>Not answered</th><th></th></tr>
+            <tr><th>#</th><th>Time</th><th>Preferred</th><th>Yes</th><th>If necessary</th><th>No</th><th>Not answered</th><th></th></tr>
         </thead>
         <tbody>
             @foreach (var slot in _event.Slots.OrderBy(s => s.Rank))
@@ -91,12 +91,13 @@ else
                         }
                         else if (slot.Viable == false)
                         {
-                            <span class="hint"> (a required person can't)</span>
+                            <span class="hint"> (a required person said no)</span>
                         }
                     </td>
-                    <td data-label="Works">@slot.Tally.Preferred</td>
+                    <td data-label="Preferred">@slot.Tally.Preferred</td>
+                    <td data-label="Yes">@slot.Tally.Yes</td>
                     <td data-label="If necessary">@slot.Tally.IfNecessary</td>
-                    <td data-label="Can't">@slot.Tally.No</td>
+                    <td data-label="No">@slot.Tally.No</td>
                     <td data-label="Not answered">@slot.Tally.Pending</td>
                     <td>
                         @if (_event.State == EventState.Open)
@@ -327,7 +328,13 @@ else
 
     private static string VoteLabel(IReadOnlyDictionary<Guid, VoteValue>? votes, Guid slotId) =>
         votes is not null && votes.TryGetValue(slotId, out var vote)
-            ? vote switch { VoteValue.Preferred => "Works", VoteValue.IfNecessary => "If necessary", _ => "Can't" }
+            ? vote switch
+            {
+                VoteValue.Preferred => "Preferred",
+                VoteValue.Yes => "Yes",
+                VoteValue.IfNecessary => "If necessary",
+                _ => "No",
+            }
             : "—";
 
     public void Dispose() => _subscription?.Dispose();

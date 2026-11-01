@@ -26,9 +26,10 @@ internal static class ToolJson
     public static VoteValue ParseVote(string? value) => value?.Trim().ToLowerInvariant() switch
     {
         "preferred" => VoteValue.Preferred,
+        "yes" => VoteValue.Yes,
         "if_necessary" => VoteValue.IfNecessary,
         "no" => VoteValue.No,
-        _ => throw new SchedulingValidationException($"'{value}' isn't a vote. Use preferred, if_necessary or no.")
+        _ => throw new SchedulingValidationException($"'{value}' isn't a vote. Use preferred, yes, if_necessary or no.")
     };
 
     public static Guid ParseId(string? value, string what) =>
