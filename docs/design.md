@@ -729,7 +729,9 @@ The server sends email to addresses it is given, so an open `create_event` would
 
 - Only allowlisted organizers can create events: a configured entry (`Scheduler:Organizers`) or an admin's
   grant (see [Administration](#administration)). Anyone signed in can ask an admin for a grant ([Requests to organize](#requests-to-organize)). An allowlisted caller's first `create_event` provisions a
-  `UserAccount` owning their verified addresses that no other account has claimed.
+  `UserAccount` owning their verified addresses (as does a person's first personal access token or added address).
+  The account is saved on its own before the rest of the call, so concurrent first calls share it: if another
+  request claimed one of the addresses first, the call uses that account rather than starting a second one.
 - Rate limits (ASP.NET Core rate limiting, `RateLimits`, configurable under `RateLimits`): `/mcp` 120
   requests per minute per caller (account or address; it runs after authorization, so the caller is known);
   the pages opened from email links (`/e/...`, `/verify`) 30 per minute per client IP; asking for a sign-in
