@@ -24,4 +24,4 @@ echo "Pushing $IMAGE_NAME:$TAG..."
 docker push "$IMAGE_NAME:$TAG"
 
 echo ""
-echo "Pushed $IMAGE_NAME:$TAG. To deploy it: ./deploy.sh $TAG"
+echo "Pushed $IMAGE_NAME:$TAG. To deploy it: ./deploy.sh $TAG (opens a lhotkalake-k8s PR for Fleet)"

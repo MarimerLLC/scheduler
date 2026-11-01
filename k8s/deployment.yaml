@@ -27,6 +27,33 @@ spec:
         runAsUser: 1654
         runAsGroup: 1654
         fsGroup: 1654
+      # Migrations run here, before the app container starts, every time the pod starts. Fleet doesn't run Helm hooks
+      # (a hook Job is applied alongside the Deployment, not before it), so an init container is what guarantees the
+      # schema is current before new code runs. The EF bundle takes a lock and does nothing when the database is up
+      # to date. If it fails, the pod stays in Init and, with Recreate, the old version is already gone: roll back by
+      # pinning the previous tag. Keep this image the same as the app container's.
+      initContainers:
+        - name: migrate
+          image: rockylhotka/scheduler:IMAGE_TAG
+          command: ["/migrate/efbundle"]
+          args: ["--connection", "$(ConnectionStrings__schedulerdb)"]
+          env:
+            - name: ConnectionStrings__schedulerdb
+              valueFrom:
+                secretKeyRef:
+                  name: scheduler-app
+                  key: ConnectionStrings__schedulerdb
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 256Mi }
       containers:
         - name: scheduler
           image: rockylhotka/scheduler:IMAGE_TAG
