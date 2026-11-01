@@ -113,6 +113,8 @@ button.danger { color: var(--danger); border-color: var(--danger); }
 table.list { width: 100%; border-collapse: collapse; }
 table.list th, table.list td { text-align: left; padding: 0.5rem; border-bottom: 1px solid var(--border); vertical-align: top; }
 table.list td:last-child { white-space: nowrap; }
+/* A request note is a stranger's text: never let one long word stretch the table. */
+table.list td.request-note { overflow-wrap: anywhere; max-width: 28rem; }
 
 @media (max-width: 40rem) {
     table.list thead { display: none; }

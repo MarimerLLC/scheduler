@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <PackageReference Include="NodaTime" Version="3.3.5" />
+    <PackageReference Include="Profanity.Detector" Version="0.1.8" />
   </ItemGroup>
 
 </Project>

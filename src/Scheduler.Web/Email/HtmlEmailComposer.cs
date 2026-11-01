@@ -132,6 +132,51 @@ internal sealed class HtmlEmailComposer(
         };
     }
 
+    public async Task<ComposedEmail> OrganizerRequestWaitingAsync(string requester, string reviewUrl)
+    {
+        var plain = text.OrganizerRequestWaiting(requester, reviewUrl);
+        return plain with
+        {
+            HtmlBody = await RenderAsync<LinkEmail>(new()
+            {
+                [nameof(LinkEmail.Subject)] = plain.Subject,
+                [nameof(LinkEmail.Paragraphs)] = new[] { PlainTextEmailComposer.OrganizerRequestWaitingIntro(requester) },
+                [nameof(LinkEmail.ActionUrl)] = reviewUrl,
+                [nameof(LinkEmail.ActionLabel)] = "Review requests",
+                [nameof(LinkEmail.Closing)] = PlainTextEmailComposer.OrganizerRequestWaitingClosing,
+            }),
+        };
+    }
+
+    public async Task<ComposedEmail> OrganizerRequestApprovedAsync(string email, string newEventUrl)
+    {
+        var plain = text.OrganizerRequestApproved(email, newEventUrl);
+        return plain with
+        {
+            HtmlBody = await RenderAsync<LinkEmail>(new()
+            {
+                [nameof(LinkEmail.Subject)] = plain.Subject,
+                [nameof(LinkEmail.Paragraphs)] = new[] { PlainTextEmailComposer.OrganizerRequestApprovedIntro(email) },
+                [nameof(LinkEmail.ActionUrl)] = newEventUrl,
+                [nameof(LinkEmail.ActionLabel)] = "Schedule a meeting",
+                [nameof(LinkEmail.Closing)] = $"Or ask your assistant, with this server's MCP endpoint as a connector: {text.McpUrl}",
+            }),
+        };
+    }
+
+    public async Task<ComposedEmail> OrganizerRequestDeclinedAsync(string email, string canAskAgainAt)
+    {
+        var plain = text.OrganizerRequestDeclined(email, canAskAgainAt);
+        return plain with
+        {
+            HtmlBody = await RenderAsync<LinkEmail>(new()
+            {
+                [nameof(LinkEmail.Subject)] = plain.Subject,
+                [nameof(LinkEmail.Paragraphs)] = new[] { PlainTextEmailComposer.OrganizerRequestDeclinedText(email, canAskAgainAt) },
+            }),
+        };
+    }
+
     private async Task<ComposedEmail> WithEventHtmlAsync(ComposedEmail plain, string to, SchedulingEvent ev, Dictionary<string, object?> parameters)
     {
         parameters[nameof(EventEmail.Subject)] = plain.Subject;

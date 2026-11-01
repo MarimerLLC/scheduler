@@ -1,0 +1,126 @@
+@page "/ask-to-organize"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Components.Authorization
+@using Scheduler.Core
+@using Scheduler.Core.Model
+@using Scheduler.Core.Services
+@using Scheduler.Web.Identity
+@inject IAdminService Admin
+
+@* Asking the admins to be allowed to organize, the same as an agent's request_to_organize. IAdminService checks the
+   caller, the address and the note again; this page only decides what to show. See docs/design.md,
+   "Requests to organize". *@
+
+<PageTitle>Ask to organize</PageTitle>
+
+<h1>Ask to organize</h1>
+
+@if (_loading)
+{
+    <p>Loading…</p>
+}
+else if (_caller is null)
+{
+    <p><a href="@ExternalSignIn.SignInPage("/ask-to-organize")" data-enhance-nav="false">Sign in</a> to ask to organize.</p>
+}
+else if (_access is { CanOrganize: true })
+{
+    <p>You can already create scheduling events. <a href="/events/new">Schedule a meeting</a>.</p>
+}
+else if (_access?.OrganizerRequest is { Status: OrganizerRequestStatus.Pending } waiting)
+{
+    <p class="message" role="status">
+        Your request for @waiting.Email has been waiting since @waiting.RequestedAt. You'll get an email when an admin decides.
+    </p>
+}
+else if (_access?.OrganizerRequest is { Status: OrganizerRequestStatus.Declined } declined)
+{
+    <p class="message" role="status">
+        An admin declined your request on @declined.DecidedAt. You can ask again from @declined.CanAskAgainAt.
+        You can still vote on any meeting you're invited to.
+    </p>
+}
+else
+{
+    <p>
+        Organizers can create scheduling events, which email the people they invite. This server's admins decide who
+        organizes. Anyone invited to an event can vote without asking.
+    </p>
+
+    <EditForm Model="_form" OnSubmit="SendAsync">
+        @if (_access?.Emails.Count > 1)
+        {
+            <label class="field">
+                <span>Address to organize from</span>
+                <InputSelect @bind-Value="_form.Email">
+                    @foreach (var email in _access.Emails)
+                    {
+                        <option value="@email">@email</option>
+                    }
+                </InputSelect>
+            </label>
+        }
+        <label class="field">
+            <span>Note to the admins <span class="hint">(optional: who you are and what you'll schedule; one line, no links, at most @FieldLimits.NoteMax characters)</span></span>
+            <InputTextArea rows="3" @bind-Value="_form.Note" maxlength="@FieldLimits.NoteMax" />
+        </label>
+        <button type="submit" disabled="@_busy">Send request</button>
+    </EditForm>
+
+    @if (_error is not null)
+    {
+        <p class="message error" role="status">@_error</p>
+    }
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthenticationState { get; set; }
+
+    private sealed class RequestForm
+    {
+        public string? Email { get; set; }
+        public string? Note { get; set; }
+    }
+
+    private readonly RequestForm _form = new();
+    private CallerIdentity? _caller;
+    private CallerAccess? _access;
+    private bool _loading = true;
+    private bool _busy;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Prerendering only shows "Loading…"; the data loads once, when the page turns interactive.
+        if (!RendererInfo.IsInteractive)
+            return;
+
+        var state = AuthenticationState is null ? null : await AuthenticationState;
+        _caller = CallerResolver.FromPrincipal(state?.User, Channel.Web);
+        if (_caller is not null)
+        {
+            _access = await Admin.GetAccessAsync(_caller, CancellationToken.None);
+            _form.Email = _caller.VerifiedEmails.FirstOrDefault();
+        }
+        _loading = false;
+    }
+
+    private async Task SendAsync()
+    {
+        _busy = true;
+        try
+        {
+            await Admin.RequestToOrganizeAsync(_caller!, _form.Email, _form.Note, CancellationToken.None);
+            _error = null;
+            _access = await Admin.GetAccessAsync(_caller!, CancellationToken.None);
+        }
+        catch (SchedulingException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

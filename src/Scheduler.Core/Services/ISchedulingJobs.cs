@@ -18,7 +18,8 @@ public interface ISchedulingJobs
 
     /// <summary>
     /// Deletes events closed more than <see cref="SchedulingOptions.RetentionDays"/> ago, and drafts unchanged for
-    /// <see cref="SchedulingOptions.DraftRetentionDays"/>, with everything about them. Returns how many events.
+    /// <see cref="SchedulingOptions.DraftRetentionDays"/>, with everything about them, and requests to organize decided
+    /// more than <see cref="SchedulingOptions.OrganizerRequestCooldownDays"/> ago. Returns how many events.
     /// </summary>
     Task<int> PurgeAsync(CancellationToken cancellationToken);
 

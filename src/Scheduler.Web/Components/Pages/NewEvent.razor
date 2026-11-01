@@ -30,7 +30,15 @@ else if (_caller is null)
 else if (_access is not { CanOrganize: true })
 {
     <p>
-        You aren't on this server's list of organizers, so you can't create events. Ask its administrator to add you.
+        You aren't on this server's list of organizers, so you can't create events.
+        @if (_access?.OrganizerRequest is { Status: OrganizerRequestStatus.Pending })
+        {
+            <text>Your <a href="/ask-to-organize">request to organize</a> is waiting for an admin.</text>
+        }
+        else
+        {
+            <a href="/ask-to-organize">Ask to organize</a><text>.</text>
+        }
         Anyone invited to an event can still vote.
     </p>
 }
