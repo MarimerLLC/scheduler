@@ -574,6 +574,11 @@ asked for them, and they are rate limited per address.
   Production uses Brevo's free SMTP relay (300 emails a day, which the expected volume is well under); any
   other relay is a configuration change. A provider's API and webhooks were left out on purpose for v1: SMTP
   works with any of them, and the volume is small.
+- **No link or open tracking.** Voting and sign-in links carry tokens, so they shouldn't pass through a relay's
+  click-tracking redirect. The relay's tracking must be off. Brevo only turns it off for Enterprise accounts, on
+  request, so every message also carries `X-Mailin-Track`, `X-Mailin-Track-Clicks` and `X-Mailin-Track-Opens`
+  set to `false`. Brevo hasn't documented these headers, so they may be ignored; check a live message (see
+  [deployment.md](deployment.md), step 2).
 - **Bounces**: only what the relay says while sending. A recipient refused with a 5xx is a
   `PermanentDeliveryException`: the row fails without retries, the address is suppressed (`Bounced`), it is
   audited (`email.bounced`) and the event's organizer gets a "Delivery problem" email
