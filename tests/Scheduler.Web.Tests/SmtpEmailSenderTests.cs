@@ -54,6 +54,8 @@ public sealed class SmtpEmailSenderTests
         Assert.AreEqual("rocky@example.com", message.GetProperty("ReplyTo")[0].GetProperty("Address").GetString());
         Assert.AreEqual("<https://scheduler.example/unsubscribe/one-click?t=x>", headers.GetProperty("List-Unsubscribe")[0].GetString());
         Assert.AreEqual("List-Unsubscribe=One-Click", headers.GetProperty("List-Unsubscribe-Post")[0].GetString());
+        foreach (var name in new[] { "X-Mailin-Track", "X-Mailin-Track-Clicks", "X-Mailin-Track-Opens" })
+            Assert.AreEqual("false", headers.GetProperty(name)[0].GetString(), $"{name} asks the relay not to track");
     }
 
     [TestMethod]

@@ -53,9 +53,22 @@ With Brevo:
    (step 3); `k8s/secret.example.yaml` already has the host, port and security mode.
 4. For DMARC, start with `p=none` and a `rua` address you read (Brevo suggests its own report address), then move
    to `p=quarantine` once the reports show only Brevo sending as the domain.
+5. **Tracking.** Brevo tracks clicks and opens in transactional mail. It rewrites every link into a tracking
+   redirect (`…sendibt2.com/tr/cl/…`), including voting and sign-in links, whose tokens let anyone holding them
+   act as that person. Brevo's staff say only Enterprise accounts can turn this off, on request; the free plan
+   can't. On the free plan:
+   - Turn on **Transactional → Settings → Tracking → Anonymous e-mail tracking**.
+   - Scheduler adds `X-Mailin-Track`, `X-Mailin-Track-Clicks` and `X-Mailin-Track-Opens` set to `false` to every
+     message. Those headers come from Brevo's community forum, not its documentation, so they may do nothing.
+   - After deploying, send yourself a test invitation and check the links in both the HTML and plain-text bodies,
+     and the `List-Unsubscribe` header. They should all go straight to `https://scheduler.tail920062.ts.net`.
+
+   If links are still rewritten and that matters, move to a relay that lets you turn tracking off. SMTP2GO and
+   Mailjet allow it in their settings, and Amazon SES doesn't track unless you configure it to. Switching relays
+   only means changing the `Email__Smtp__*` values.
 
 With another relay, the same three things: authenticate the domain (the relay gives SPF and DKIM records), allow
-the sender address, and create SMTP credentials. The records look like this:
+the sender address, and create SMTP credentials. Also turn off its click and open tracking. The records look like this:
 
 | Name | Type | Value |
 |---|---|---|
