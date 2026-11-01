@@ -9,7 +9,9 @@ it when a decision changes.
 - `dotnet build Scheduler.slnx`
 - `dotnet test Scheduler.slnx` (`Scheduler.Data.Tests` and `Scheduler.Web.Tests` need Docker for PostgreSQL)
 - Local run (needs Docker): `dotnet run --project src/Scheduler.AppHost`
-- Deploy: `k8s/build.sh <version>` then `k8s/deploy.sh <version>`, per `docs/deployment.md`. Secrets come from
+- Deploy: `k8s/build.sh <version>` then `k8s/deploy.sh <version>`, per `docs/deployment.md`. The cluster is run
+  by Fleet (`fleet/infra/scheduler` in lhotkalake-k8s): `deploy.sh` generates that bundle from `k8s/` and opens a PR
+  there, and merging it deploys. Never `kubectl apply` the manifests by hand. Secrets come from
   `k8s/create-secrets.sh`, which the person runs themselves (it prompts for the values); never apply
   `k8s/secret.example.yaml`, and never handle secret values in a session.
 - New migration: `dotnet tool restore`, then

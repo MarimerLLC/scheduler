@@ -779,7 +779,9 @@ Purged with the event. Admin actions (`organizer.added`, `organizer.removed`, `o
 The runbook is [deployment.md](deployment.md); the manifests and scripts are in `k8s/`.
 
 - One container image (`Dockerfile` at the repo root, `rockylhotka/scheduler:<version>` on Docker Hub),
-  deployed to the `lhotkalake` cluster in its own namespace, `scheduler`, by `k8s/deploy.sh`. One replica, with
+  deployed to the `lhotkalake` cluster in its own namespace, `scheduler`, by Rancher Fleet: the bundle
+  `fleet/infra/scheduler` in `rockfordlhotka/lhotkalake-k8s`. `k8s/deploy.sh` generates that bundle's manifest from
+  `k8s/` with the image tag and opens a PR there; merging it deploys. One replica, with
   the `Recreate` strategy so a rollout never runs two (two outbox dispatchers could send an email twice).
 - **Public host**: `https://scheduler.tail920062.ts.net` through Tailscale Funnel, like threa: no public ingress or
   certificate setup on the cluster. Voting links, OAuth redirect URIs and the MCP endpoint all use it.
@@ -794,9 +796,11 @@ The runbook is [deployment.md](deployment.md); the manifests and scripts are in 
 - **Data Protection keys persisted to the database** (`PersistKeysToDbContext`, table `DataProtectionKeys`), so
   sign-in cookies, unsubscribe links and pending email sign-ins survive restarts. Stored unencrypted: whoever
   can read the database can already read everything in it.
-- Migrations applied by an EF Core migration bundle (`/migrate/efbundle` in the image) that a Job runs before
-  the rollout; a failed migration leaves the running version alone. (In Development only, the app applies them
-  at startup so `dotnet run` under Aspire just works.)
+- Migrations applied by an EF Core migration bundle (`/migrate/efbundle` in the image) in the pod's `migrate`
+  init container, so the app container never starts against an older schema. Not a Job: Fleet doesn't run Helm
+  hooks, so a Job can't be ordered before the rollout. With `Recreate`, a failed migration leaves scheduler down
+  (the old pod is already gone) until a fix or a rollback. (In Development only, the app applies them at startup
+  so `dotnet run` under Aspire just works.)
 - Probes: `/alive` (liveness), `/health` (readiness). Read-only root filesystem, non-root, all capabilities
   dropped. Telemetry to the cluster's Alloy over OTLP.
 

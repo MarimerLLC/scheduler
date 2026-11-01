@@ -181,4 +181,4 @@ for secret in scheduler-identity scheduler-app; do
     echo "  $secret: $(kubectl get secret "$secret" -n "$NS" -o go-template='{{range $k, $v := .data}}{{$k}} {{end}}')"
 done
 echo ""
-echo "Done. Next: docs/deployment.md step 4 (k8s/build.sh, then k8s/deploy.sh)."
+echo "Done. Next: docs/deployment.md step 4 (k8s/build.sh, then k8s/deploy.sh, which opens the Fleet PR)."
