@@ -133,7 +133,7 @@ else if (_event is not null)
     private static readonly TimeSpan CookieLifetime = TimeSpan.FromHours(12);
 
     private static readonly (string Value, string Label)[] Choices =
-        [("preferred", "Works"), ("if_necessary", "If necessary"), ("no", "Can't")];
+        [("preferred", "Preferred"), ("yes", "Yes"), ("if_necessary", "If necessary"), ("no", "No")];
 
     [CascadingParameter] public HttpContext HttpContext { get; set; } = default!;
 
@@ -229,11 +229,12 @@ else if (_event is not null)
     private static VoteValue? ToVote(string? value) => value switch
     {
         "preferred" => VoteValue.Preferred,
+        "yes" => VoteValue.Yes,
         "if_necessary" => VoteValue.IfNecessary,
         "no" => VoteValue.No,
         _ => null,
     };
 
     private static string Tally(SlotTally tally) =>
-        $"So far: {tally.Preferred} works, {tally.IfNecessary} if necessary, {tally.No} can't, {tally.Pending} not answered.";
+        $"So far: {tally.Preferred} preferred, {tally.Yes} yes, {tally.IfNecessary} if necessary, {tally.No} no, {tally.Pending} not answered.";
 }

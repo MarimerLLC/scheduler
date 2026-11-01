@@ -15,11 +15,16 @@ public enum EventState
     Expired
 }
 
-/// <summary>A participant's answer for one proposed slot.</summary>
+/// <summary>A participant's answer for one proposed slot, worst to best. Only <see cref="No"/> means no.</summary>
 public enum VoteValue
 {
+    /// <summary>Rules the slot out for this person.</summary>
     No,
+    /// <summary>They could make it work, but it's painful: moving other commitments, early or late hours.</summary>
     IfNecessary,
+    /// <summary>They can make it work without much trouble.</summary>
+    Yes,
+    /// <summary>A great time for them.</summary>
     Preferred
 }
 

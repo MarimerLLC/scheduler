@@ -56,6 +56,10 @@ public sealed partial class VotingPageTests
         var html = await TextOf(await phone.Http.GetAsync(page));
         StringAssert.Contains(html, "Planning");
         StringAssert.Contains(html, ev.Slots[0].OrganizerLocal);
+        CollectionAssert.AreEqual(
+            new[] { "preferred", "yes", "if_necessary", "no" },
+            ChoicesFor(html, ev.Slots[0].SlotId),
+            "four choices, best first");
 
         response = await phone.SubmitFormAsync(page.PathAndQuery,
             (SlotField(ev.Slots[0].SlotId), "preferred"),
@@ -109,9 +113,13 @@ public sealed partial class VotingPageTests
         var browser = _app.CreateBrowser();
         await browser.Http.PostAsync("/dev/signin", new FormUrlEncodedContent(new Dictionary<string, string> { ["email"] = "carol@example.com" }));
 
-        await browser.SubmitFormAsync($"/e/{ev.ShortCode}", (SlotField(ev.Slots[2].SlotId), "if_necessary"));
+        await browser.SubmitFormAsync($"/e/{ev.ShortCode}",
+            (SlotField(ev.Slots[1].SlotId), "yes"),
+            (SlotField(ev.Slots[2].SlotId), "if_necessary"));
 
-        Assert.AreEqual(VoteValue.IfNecessary, (await VotesOfAsync("carol@example.com"))![ev.Slots[2].SlotId]);
+        var votes = await VotesOfAsync("carol@example.com");
+        Assert.AreEqual(VoteValue.Yes, votes![ev.Slots[1].SlotId]);
+        Assert.AreEqual(VoteValue.IfNecessary, votes[ev.Slots[2].SlotId]);
     }
 
     [TestMethod]
@@ -191,6 +199,10 @@ public sealed partial class VotingPageTests
     private static async Task<string> TextOf(HttpResponseMessage response) => WebUtility.HtmlDecode(await response.Content.ReadAsStringAsync());
 
     private static string SlotField(Guid slotId) => "slot-" + slotId.ToString("N");
+
+    /// <summary>The radio values the voting page offers for one slot, in page order.</summary>
+    private static string[] ChoicesFor(string html, Guid slotId) =>
+        [.. Regex.Matches(html, $"name=\"{SlotField(slotId)}\" value=\"([a-z_]+)\"").Select(m => m.Groups[1].Value)];
 
     private static string VotingLinkIn(OutboxEmail email) => PathIn(email, VotingLink());
 

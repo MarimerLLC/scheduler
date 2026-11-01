@@ -19,7 +19,7 @@ public sealed record McpParticipant(
 
 public sealed record McpVote(
     [property: Description("slotId from get_event.")] string SlotId,
-    [property: Description("preferred, if_necessary or no.")] string Vote);
+    [property: Description("preferred (a great time), yes (works without much trouble), if_necessary (possible but painful: moving other commitments, early or late hours) or no (can't make it).")] string Vote);
 
 /// <summary>
 /// The MCP surface. Each tool resolves the caller, delegates to <see cref="ISchedulingService"/>, and turns
@@ -71,7 +71,7 @@ public sealed class SchedulingTools(ISchedulingService scheduling, IAdminService
         Run(caller => scheduling.ListMyEventsAsync(caller, ParseFilter(filter), cancellationToken));
 
     [McpServerTool(Name = "get_event", Title = "Get scheduling event", ReadOnly = true, Idempotent = true, OpenWorld = false)]
-    [Description("Gets one event: its slots with per-slot vote totals and the user's own votes. The organizer also sees each participant's votes and a ranked recommendation.")]
+    [Description("Gets one event: its slots with per-slot vote totals and the user's own votes. The organizer also sees each participant's votes and a ranked recommendation (rank 1 is best). Only no rules a slot out. Recommend a slot with an if_necessary vote only when it is the only way to make any time work, and then tell the organizer who would be stretched by it.")]
     public Task<string> GetEvent(
         [Description("The event's id or shortCode.")] string eventId,
         [Description("Optional IANA zone to add a viewer-local time to every slot.")] string? timeZone = null,
@@ -79,7 +79,7 @@ public sealed class SchedulingTools(ISchedulingService scheduling, IAdminService
         Run(caller => scheduling.GetEventAsync(caller, eventId, timeZone, cancellationToken));
 
     [McpServerTool(Name = "vote", Title = "Vote on proposed times", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
-    [Description("Records the user's answer for one or more slots. Each slot is answered on its own: mark every slot that works as preferred, however many there are. Voting again replaces earlier answers, so retrying is safe. Confirm the answers with the user first.")]
+    [Description("Records the user's answer for one or more slots. Each slot is answered on its own: mark every slot the user can make, however many there are, as preferred if it's a great time or yes if it's fine. Save if_necessary for times that would be painful, and no for times they can't make. Voting again replaces earlier answers, so retrying is safe. Confirm the answers with the user first.")]
     public Task<string> Vote(
         [Description("The event's id or shortCode.")] string eventId,
         [Description("One entry per slot answered.")] McpVote[] votes,
@@ -113,7 +113,7 @@ public sealed class SchedulingTools(ISchedulingService scheduling, IAdminService
         Run(caller => scheduling.WithdrawSlotAsync(caller, eventId, ToolJson.ParseId(slotId, "slot"), version, cancellationToken));
 
     [McpServerTool(Name = "finalize_event", Title = "Pick the meeting time", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = true)]
-    [Description("Organizer only: picks the final slot and emails everyone. Re-check the organizer's calendar first. Then create the meeting in the organizer's own calendar using the returned localStart, timeZone and attendeeEmails, and call record_calendar_event.")]
+    [Description("Organizer only: picks the final slot and emails everyone. Re-check the organizer's calendar first. If the chosen slot has if_necessary votes, make sure the organizer knows who would be stretched by it. Then create the meeting in the organizer's own calendar using the returned localStart, timeZone and attendeeEmails, and call record_calendar_event.")]
     public Task<string> FinalizeEvent(
         [Description("The event's id or shortCode.")] string eventId,
         [Description("slotId of the chosen time.")] string slotId,

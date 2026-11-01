@@ -178,7 +178,7 @@ public sealed class SchedulingService(
                 throw new SchedulingValidationException(
                     $"{vote.SlotId} isn't one of this event's current proposed times. Call get_event for the current slot IDs.");
             if (!Enum.IsDefined(vote.Value))
-                throw new SchedulingValidationException("Each vote must be preferred, if_necessary or no.");
+                throw new SchedulingValidationException("Each vote must be preferred, yes, if_necessary or no.");
         }
 
         var noteText = note is null ? null : OptionalText(note, FieldLimits.NoteMax, "note");
@@ -718,7 +718,7 @@ public sealed class SchedulingService(
                     SlotTimeFormatter.Utc(s.Start),
                     SlotTimeFormatter.Display(s.Start, ev.OrganizerTimeZone),
                     viewerTimeZone is null ? null : SlotTimeFormatter.Display(s.Start, viewerTimeZone),
-                    new SlotTally(score.Preferred, score.IfNecessary, score.No, score.Pending),
+                    new SlotTally(score.Preferred, score.Yes, score.IfNecessary, score.No, score.Pending),
                     myVotes.TryGetValue(s.Id, out var mine) ? mine : null,
                     isOrganizer ? rank : null,
                     isOrganizer ? score.Viable : null);

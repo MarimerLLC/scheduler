@@ -62,7 +62,7 @@ public sealed record EventSummary(
     int? Invited = null);
 
 /// <summary>Per-slot totals. Shown to every participant; who voted what is shown only to the organizer.</summary>
-public sealed record SlotTally(int Preferred, int IfNecessary, int No, int Pending);
+public sealed record SlotTally(int Preferred, int Yes, int IfNecessary, int No, int Pending);
 
 public sealed record SlotView(
     Guid SlotId,

@@ -18,8 +18,9 @@ public sealed class SchedulingPrompts
 
         1. Call list_my_events with filter "needs_my_vote".
         2. For each event, call get_event with timeZone "{timeZone}".
-        3. Using my calendar tools, check each slot against my calendar. Suggest: preferred if I'm clearly free,
-           if_necessary if it means moving something minor or is outside my usual hours, no if I'm busy.
+        3. Using my calendar tools, check each slot against my calendar. Suggest: preferred if it's a great time
+           for me, yes if I'm free or it means only a trivial move, if_necessary if it's painful (moving real
+           commitments, or early or late hours), no if I can't make it.
         4. Show me your suggested answers for each event, with times in {timeZone}, and wait for my confirmation.
         5. Call vote with the answers I confirm.
 

@@ -13,8 +13,8 @@ calendars with anyone, including the server**. It is one hosted service with thr
 - **outbound email**, which tells people a request is waiting and reports the outcome.
 
 The organizer (or their agent) proposes candidate times that already work for the organizer. Everyone
-invited votes **preferred**, **if necessary** or **no** on each one. Each person's own agent checks that
-person's calendar with whatever calendar tool it already has; the server only ever learns the votes.
+invited votes **preferred**, **yes**, **if necessary** or **no** on each one. Each person's own agent checks
+that person's calendar with whatever calendar tool it already has; the server only ever learns the votes.
 
 ## Goals
 
@@ -196,7 +196,7 @@ their own rows.
 | | Organizer | Participant | Anyone else |
 |---|---|---|---|
 | Title, description, slots | ✓ | ✓ | — |
-| Per-slot totals (preferred / if necessary / no / pending) | ✓ | ✓ | — |
+| Per-slot totals (preferred / yes / if necessary / no / pending) | ✓ | ✓ | — |
 | Own votes | n/a | ✓ | — |
 | Who voted what | ✓ | — | — |
 | Participant names and addresses | ✓ | ✓ (like a normal invite) | — |
@@ -206,6 +206,19 @@ their own rows.
 visible to you", whether or not it exists.
 
 Hiding individual votes from other participants avoids leaks like "Bob said no to every Tuesday."
+
+### Vote values
+
+Worst to best (`VoteValue`; the column stores the name as a string, so adding a value needs no migration):
+
+| Wire value | Label | Meaning |
+|---|---|---|
+| `no` | No | Rules the slot out for this person. |
+| `if_necessary` | If necessary | They could make it work, but it's painful (moving other commitments, early or late hours). |
+| `yes` | Yes | They can make it work without much trouble. |
+| `preferred` | Preferred | A great time for them. |
+
+The same labels are used on the voting page, the event page and in tallies. Only "no" means no.
 
 ### Voting rules
 
@@ -218,13 +231,26 @@ Hiding individual votes from other participants avoids leaks like "Bob said no t
 
 ### Ranking
 
-`SlotRanker` orders active slots for the organizer's recommendation:
+`SlotRanker` orders active slots for the organizer's recommendation, required people before optional
+people:
 
 1. fewest "no" from **required** participants (any is disqualifying: the slot is not *viable*),
-2. fewest "no" overall (optional participants' "no" counts here),
-3. most "preferred",
-4. fewest participants who haven't voted yet,
-5. earliest.
+2. fewest "if necessary" from required participants,
+3. fewest "no" from optional participants,
+4. fewest "if necessary" from optional participants,
+5. most "preferred" (everyone),
+6. fewest participants who haven't voted yet,
+7. earliest.
+
+This is a strict "least misery" order rather than a weighted score that adds up how many people can
+come: one required person's "if necessary" outweighs any number of "preferred". So "if necessary" is a
+last resort, picked only when no viable slot is free of it, and an optional person's "no" counts for less
+than a required person's "if necessary" but never makes a slot unviable. "Yes" is not a penalty; it just
+doesn't add to "preferred".
+
+Agents get the same rule in the `get_event`, `finalize_event` and server instructions: recommend a slot
+with an "if necessary" vote only when it is the only way to make any time work, and tell the organizer who
+would be stretched by it.
 
 The server recommends; the organizer decides. There is no auto-finalize in v1.
 
@@ -446,7 +472,7 @@ meant for the caller come back as tool errors with a specific message.
 | `create_event` | Allowlisted organizer | open-world | Validates (title ≤ 120, duration 5–480 min, 1–20 slots, ≤ 50 participants, slots in the future and distinct, respond-by in the future), opens the event, queues one invitation per participant. Returns the event with `id` and `shortCode`. |
 | `list_my_events` | Anyone signed in | read-only | Filter `needs_my_vote` (default), `organizing` or `all`. |
 | `get_event` | Organizer or participant | read-only | Slots with totals and the caller's own votes; for the organizer, each participant's votes and the ranking. Optional `timeZone` adds viewer-local times. |
-| `vote` | Participant | idempotent | Upserts answers (`preferred`, `if_necessary`, `no`) for one or more slots, plus an optional note (≤ 280). Emails the organizer once every required participant has responded. |
+| `vote` | Participant | idempotent | Upserts answers (`preferred`, `yes`, `if_necessary`, `no`) for one or more slots, plus an optional note (≤ 280). Emails the organizer once every required participant has responded. |
 | `propose_more_slots` | Organizer | open-world | Adds a round of slots. Reopens an expired or finalized event (rescheduling). Emails participants about the new slots. Needs `version`. |
 | `withdraw_slot` | Organizer | destructive, idempotent | Removes a slot that no longer works for the organizer and deletes its votes. No email. Needs `version`. |
 | `finalize_event` | Organizer | open-world | Picks the slot, emails everyone, returns `localStart`, `timeZone`, `durationMinutes`, `attendeeEmails` for creating the calendar event. Needs `version`. The agent should re-check the organizer's calendar first. |

@@ -21,8 +21,8 @@ public sealed class VisibilityTests
         var carolsView = await _h.GetAsync(Harness.Carol, ev);
 
         Assert.IsFalse(carolsView.IsOrganizer);
-        Assert.AreEqual(new SlotTally(1, 0, 0, 2), carolsView.Slots[0].Tally);
-        Assert.AreEqual(new SlotTally(0, 0, 1, 2), carolsView.Slots[1].Tally);
+        Assert.AreEqual(new SlotTally(1, 0, 0, 0, 2), carolsView.Slots[0].Tally);
+        Assert.AreEqual(new SlotTally(0, 0, 0, 1, 2), carolsView.Slots[1].Tally);
         Assert.IsNull(carolsView.Slots[0].MyVote);
         Assert.IsNull(carolsView.Slots[0].Rank);
         Assert.IsNull(carolsView.Slots[0].Viable);
