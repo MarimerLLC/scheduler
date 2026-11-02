@@ -317,6 +317,83 @@ public sealed class SchedulingService(
             ev.Participants.Select(p => p.Email).Order().ToList());
     }
 
+    public async Task<ResendResult> ResendInvitationsAsync(CallerIdentity caller, string eventRef, IReadOnlyList<string>? emails, CancellationToken cancellationToken)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+        var now = clock.GetCurrentInstant();
+        var account = await FindAccountAsync(db, caller, cancellationToken);
+        var ev = await LoadEventAsync(db, eventRef, tracking: true, cancellationToken);
+        RequireOrganizer(Authorize(ev, caller, account));
+
+        if (ev.State != EventState.Open)
+            throw new SchedulingConflictException(
+                $"This event is {ev.State.ToString().ToLowerInvariant()} and isn't taking votes, so its invitation can't be resent." +
+                (ev.State is EventState.Expired or EventState.Finalized ? " Propose more times to reopen voting." : ""));
+
+        var chosen = ChooseParticipants(ev, emails);
+        var addresses = chosen.Select(p => p.Email).ToList();
+        var suppressed = await db.Suppressions.AsNoTracking()
+            .Where(s => addresses.Contains(s.Email))
+            .ToDictionaryAsync(s => s.Email, s => s.Reason, cancellationToken);
+        var cooldown = Duration.FromMinutes(Math.Max(0, Options.InvitationResendCooldownMinutes));
+
+        var notices = new List<string>();
+        var resent = new List<string>();
+        foreach (var participant in chosen)
+        {
+            if (suppressed.TryGetValue(participant.Email, out var reason))
+            {
+                notices.Add(reason == SuppressionReason.Unsubscribed
+                    ? $"{participant.Email} has asked this server not to email them, so the invitation wasn't resent. Tell them about it yourself."
+                    : $"Email to {participant.Email} has bounced before, so the invitation wasn't resent. Check the address or tell them yourself.");
+                continue;
+            }
+
+            var lastSent = participant.InvitationResentAt is { } resentAt && resentAt > participant.InvitedAt ? resentAt : participant.InvitedAt;
+            if (now - lastSent < cooldown)
+            {
+                notices.Add($"{participant.Email} was sent the invitation less than {Describe(cooldown)} ago, so it wasn't sent again. Try again later.");
+                continue;
+            }
+
+            participant.InvitationResentAt = now;
+            QueueEmail(db, ev, participant.Email, await composer.InvitationAsync(ev, participant, VotingUrl(ev, participant)), now);
+            resent.Add(participant.Email);
+        }
+
+        if (resent.Count > 0)
+        {
+            Audit(db, ev, caller, "invitations.resent", new { to = resent }, now);
+            await SaveAsync(db, ev, cancellationToken);
+        }
+        return new ResendResult(ToView(ev, caller, account, viewerTimeZone: null, notices), resent);
+    }
+
+    /// <summary>The participants named by <paramref name="emails"/>, or everyone if none are named. Each must be invited.</summary>
+    private static List<Participant> ChooseParticipants(SchedulingEvent ev, IReadOnlyList<string>? emails)
+    {
+        var everyone = ev.Participants.OrderBy(p => p.Email, StringComparer.Ordinal).ToList();
+        if (emails is null || emails.Count == 0)
+            return everyone;
+
+        var wanted = emails.Select(EmailAddresses.Normalize).ToHashSet(StringComparer.Ordinal);
+        var unknown = wanted.Where(email => everyone.All(p => p.Email != email)).Order(StringComparer.Ordinal).ToList();
+        if (unknown.Count > 0)
+            throw new SchedulingValidationException(
+                $"{string.Join(", ", unknown)} {(unknown.Count == 1 ? "isn't" : "aren't")} invited to this event. " +
+                "Only people already invited can be sent the invitation again.");
+        return everyone.Where(p => wanted.Contains(p.Email)).ToList();
+    }
+
+    /// <summary>"1 hour", "90 minutes".</summary>
+    private static string Describe(Duration duration)
+    {
+        var minutes = (long)duration.TotalMinutes;
+        if (minutes >= 60 && minutes % 60 == 0)
+            return minutes == 60 ? "1 hour" : $"{minutes / 60} hours";
+        return minutes == 1 ? "1 minute" : $"{minutes} minutes";
+    }
+
     public async Task<EventView> CancelAsync(CallerIdentity caller, string eventRef, string? reason, CancellationToken cancellationToken)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);

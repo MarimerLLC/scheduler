@@ -121,6 +121,14 @@ public sealed class SchedulingTools(ISchedulingService scheduling, IAdminService
         CancellationToken cancellationToken = default) =>
         Run(caller => scheduling.FinalizeAsync(caller, eventId, ToolJson.ParseId(slotId, "slot"), version, cancellationToken));
 
+    [McpServerTool(Name = "resend_invitations", Title = "Resend invitations", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = true)]
+    [Description("Organizer only, while the event is open: emails the invitation again, with the same personal voting link and the current times, to the listed participants, or to everyone invited if emails is omitted. Use it when someone says they never got the invitation or lost it. Anyone sent it too recently (within the last hour, by default), unsubscribed, or whose email bounced is skipped and explained in notices. Returns the event and resent, the addresses it was sent to. Confirm with the organizer first.")]
+    public Task<string> ResendInvitations(
+        [Description("The event's id or shortCode.")] string eventId,
+        [Description("Optional: addresses of participants to resend to, as listed by get_event. Omit to resend to everyone invited.")] string[]? emails = null,
+        CancellationToken cancellationToken = default) =>
+        Run(caller => scheduling.ResendInvitationsAsync(caller, eventId, emails, cancellationToken));
+
     [McpServerTool(Name = "cancel_event", Title = "Cancel scheduling event", ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = true)]
     [Description("Organizer only: calls the meeting off and emails everyone.")]
     public Task<string> CancelEvent(

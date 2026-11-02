@@ -81,6 +81,27 @@ public sealed class OrganizerPageTests
     }
 
     [TestMethod]
+    public async Task The_event_page_resends_the_invitation_to_the_selected_people_or_everyone()
+    {
+        await _app.DisposeAsync();
+        _app = new SchedulerApp(("Scheduler:InvitationResendCooldownMinutes", "0"));
+        var ev = await CreateEventAsync();
+
+        using var scope = _app.Services.CreateScope();
+        await using var bunit = NewBunit(scope, "rocky@example.com");
+        var page = bunit.Render<EventDetails>(p => p.Add(e => e.Id, ev.Id));
+        page.WaitForAssertion(() => Assert.DoesNotContain("Loading", page.Markup));
+
+        page.Find("input[aria-label='Select Carol to resend the invitation']").Change(true);
+        page.Find("button:contains('Resend to the selected (1)')").Click();
+        page.WaitForAssertion(() => StringAssert.Contains(page.Markup, "Resent the invitation to carol@example.com."));
+
+        page.Find("button:contains('Resend to everyone')").Click();
+        page.WaitForAssertion(() => StringAssert.Contains(page.Markup,
+            "Resent the invitation to bob@example.com, carol@example.com, dave@example.com."));
+    }
+
+    [TestMethod]
     public async Task A_participant_on_the_event_page_is_sent_to_the_voting_page_and_a_stranger_sees_nothing()
     {
         var ev = await CreateEventAsync();
@@ -145,17 +166,24 @@ public sealed class OrganizerPageTests
         where TPage : IComponent
     {
         using var scope = _app.Services.CreateScope();
-        await using var bunit = new BunitContext();
+        await using var bunit = NewBunit(scope, email);
+
+        var page = bunit.Render(parameters ?? (_ => { }));
+        page.WaitForAssertion(() => Assert.DoesNotContain("Loading", page.Markup));
+        return WebUtility.HtmlDecode(page.Markup);
+    }
+
+    /// <summary>A bUnit context over the app's services, rendering interactively and signed in as <paramref name="email"/>.</summary>
+    private static BunitContext NewBunit(IServiceScope scope, string email)
+    {
+        var bunit = new BunitContext();
         bunit.Services.AddFallbackServiceProvider(scope.ServiceProvider);
         var auth = bunit.AddAuthorization();
         auth.SetAuthorized(email);
         auth.SetClaims(new Claim(ClaimTypes.Email, email));
         bunit.JSInterop.Mode = JSRuntimeMode.Loose;
         bunit.SetRendererInfo(new RendererInfo("Server", isInteractive: true));
-
-        var page = bunit.Render(parameters ?? (_ => { }));
-        page.WaitForAssertion(() => Assert.DoesNotContain("Loading", page.Markup));
-        return WebUtility.HtmlDecode(page.Markup);
+        return bunit;
     }
 
     private async Task<EventView> CreateEventAsync()

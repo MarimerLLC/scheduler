@@ -43,6 +43,12 @@ public sealed class SchedulingOptions
     public int MaxInvitationsPerDay { get; set; } = 200;
 
     /// <summary>
+    /// Minutes after a participant was sent their invitation (first or again) before the organizer can have it
+    /// resent to them. Resends don't count toward <see cref="MaxInvitationsPerDay"/>; this paces them instead.
+    /// </summary>
+    public int InvitationResendCooldownMinutes { get; set; } = 60;
+
+    /// <summary>
     /// Days after an admin declines someone's request to organize before that person can ask again. Decided
     /// requests are deleted after this long. See docs/design.md, "Requests to organize".
     /// </summary>

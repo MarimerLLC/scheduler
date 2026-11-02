@@ -36,6 +36,13 @@ public interface ISchedulingService
 
     Task<FinalizeResult> FinalizeAsync(CallerIdentity caller, string eventRef, Guid slotId, uint expectedVersion, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Emails the invitation again, with the same voting link, to the participants named in
+    /// <paramref name="emails"/>, or to everyone invited if it is null or empty. Organizer only, while the event
+    /// is open. Skips (with a notice) anyone who unsubscribed or bounced, or was sent it within the cooldown.
+    /// </summary>
+    Task<ResendResult> ResendInvitationsAsync(CallerIdentity caller, string eventRef, IReadOnlyList<string>? emails, CancellationToken cancellationToken);
+
     Task<EventView> CancelAsync(CallerIdentity caller, string eventRef, string? reason, CancellationToken cancellationToken);
 
     /// <summary>Stores the iCalendar UID of the meeting the organizer's agent created after finalizing.</summary>
