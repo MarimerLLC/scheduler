@@ -512,6 +512,9 @@ namespace Scheduler.Data.Migrations
                     b.Property<Guid>("EventId")
                         .HasColumnType("uuid");
 
+                    b.Property<Instant?>("InvitationResentAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<Instant>("InvitedAt")
                         .HasColumnType("timestamp with time zone");
 

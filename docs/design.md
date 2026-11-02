@@ -129,7 +129,7 @@ All tables in PostgreSQL via EF Core 10. Times are NodaTime types, mapped native
 |---|---|---|
 | `SchedulingEvent` | `Id` (GUID v7) | One meeting being scheduled. Title, description, duration, organizer (account, plus the address and name participants see), organizer's IANA zone, state, respond-by, finalized slot, calendar UID, `ShortCode`, `UpdatedAt`, concurrency `Version` (`xmin`). |
 | `ProposedSlot` | `Id` | A candidate start: `LocalStart` + `TimeZoneId` (source of truth) and derived `Start` (`Instant`). `Round`, `WithdrawnAt`. |
-| `Participant` | `Id`; unique (`EventId`, `Email`) | An invited address, its role (required/optional), the random nonce its voting-link token is derived from, invited/reminded/responded times, optional note. |
+| `Participant` | `Id`; unique (`EventId`, `Email`) | An invited address, its role (required/optional), the random nonce its voting-link token is derived from, invited/resent/reminded/responded times, optional note. |
 | `Vote` | (`ParticipantId`, `SlotId`) | One answer. The composite key makes voting an upsert, so retries are safe. Records the channel. |
 | `UserAccount` | `Id` | A signed-in person. |
 | `OrganizerGrant` | `Pattern` | An admin's grant to organize: an exact address or `*@domain`, with an optional note and who granted it when. |
@@ -476,6 +476,7 @@ meant for the caller come back as tool errors with a specific message.
 | `propose_more_slots` | Organizer | open-world | Adds a round of slots. Reopens an expired or finalized event (rescheduling). Emails participants about the new slots. Needs `version`. |
 | `withdraw_slot` | Organizer | destructive, idempotent | Removes a slot that no longer works for the organizer and deletes its votes. No email. Needs `version`. |
 | `finalize_event` | Organizer | open-world | Picks the slot, emails everyone, returns `localStart`, `timeZone`, `durationMinutes`, `attendeeEmails` for creating the calendar event. Needs `version`. The agent should re-check the organizer's calendar first. |
+| `resend_invitations` | Organizer | open-world | While the event is open, emails the invitation again (same personal voting link, current times) to the listed participants, or to everyone invited if none are listed. An address that isn't invited is refused; anyone unsubscribed, bounced, or sent the invitation within `Scheduler:InvitationResendCooldownMinutes` (60) is skipped with a notice. Returns `resent`, the addresses it went to. |
 | `cancel_event` | Organizer | destructive, open-world | Cancels; emails everyone who was invited, with the optional reason. |
 | `record_calendar_event` | Organizer | idempotent | Stores the iCalendar UID of the meeting the agent created, after finalizing. |
 | `get_my_access` | Anyone signed in | read-only | The caller's verified addresses, whether they may organize or administer, and their waiting (or recently declined) request to organize. |
@@ -532,7 +533,7 @@ Blazor with per-page render modes.
 | `/e/{shortCode}?t=...` | **Static SSR with plain form posts** | Voting. Opened from email, often on a phone: no long-lived connection, survives flaky networks, works without JavaScript (`app.js` only adds each time in the viewer's own zone). See [Magic links](#magic-links-voters-without-an-account). |
 | `/events` | InteractiveServer | Dashboard: what is waiting for my answer, the events I organize with how many have answered (live), events I'm invited to. |
 | `/events/new` | InteractiveServer | Compose an event by hand: times in one zone (the browser's by default), invitees, optional deadline. Sending opens it, like `create_event`. |
-| `/events/{id}` | InteractiveServer | One event, for its organizer: ranked times with tallies, who answered what and their notes (live); pick, withdraw, propose more times or reschedule, cancel. Picking shows what to put in the calendar. Participants get a link to the voting page. |
+| `/events/{id}` | InteractiveServer | One event, for its organizer: ranked times with tallies, who answered what and their notes (live); pick, withdraw, resend the invitation to selected people or everyone, propose more times or reschedule, cancel. Picking shows what to put in the calendar. Participants get a link to the voting page. |
 | `/account` | InteractiveServer | Verified addresses (add by email link, remove), personal access tokens. |
 | `/signin/email` | Static SSR with a form post | Offers to email a sign-in link to an address the provider didn't verify. |
 | `/verify?t=...` | Static SSR with a form post | Confirms an emailed link: signs in, or adds the address to the signed-in account. |
@@ -559,7 +560,7 @@ Outbound only. Nothing parses inbound mail.
 
 | Message | To | When |
 |---|---|---|
-| Invitation | Each participant | Event opened |
+| Invitation | Each participant | Event opened; again when the organizer resends it (`resend_invitations`, or the event page) |
 | New times | Participants | `propose_more_slots` |
 | Reminder | Participants who haven't answered every slot | Once per deadline, about 24 h before respond-by; lists only the unanswered times |
 | Everyone has responded | Organizer | Last required participant votes |
@@ -742,7 +743,9 @@ The server sends email to addresses it is given, so an open `create_event` would
 - Per organizer, over a rolling 24 hours (`SchedulingService`, configurable): at most 20 new events
   (`Scheduler:MaxEventsPerDay`) and 200 people invited (`Scheduler:MaxInvitationsPerDay`), counting every
   participant of the organizer's events created in that time, cancelled or not. Emails to people already
-  invited (new times, reminders, the result) don't count. An event over either limit is refused whole, with
+  invited (new times, reminders, resent invitations, the result) don't count. A resent invitation is paced
+  per participant instead: not within `Scheduler:InvitationResendCooldownMinutes` (60) of the last time that
+  person was sent it. An event over either limit is refused whole, with
   a message saying why. Two events created at the same moment can each pass the check, so the limit can be
   overshot by one event; that is fine for its purpose.
 - Participants never need an account to vote.

@@ -141,6 +141,11 @@ else
             {
                 <tr>
                     <td>
+                        @if (_event.State == EventState.Open)
+                        {
+                            <input type="checkbox" aria-label="Select @(person.DisplayName ?? person.Email) to resend the invitation"
+                                   checked="@_resendTo.Contains(person.Email)" @onchange="e => ToggleResend(person.Email, e.Value is true)" />
+                        }
                         @(person.DisplayName ?? person.Email)
                         @if (person.DisplayName is not null)
                         {
@@ -160,6 +165,12 @@ else
             }
         </tbody>
     </table>
+    @if (_event.State == EventState.Open)
+    {
+        <p class="hint">Someone didn't get the invitation, or lost it? Send it again, with the same voting link and the current times.</p>
+        <button disabled="@(_busy || _resendTo.Count == 0)" @onclick="() => ResendAsync(_resendTo.ToList())">Resend to the selected (@_resendTo.Count)</button>
+        <button disabled="@_busy" @onclick="() => ResendAsync(null)">Resend to everyone</button>
+    }
 
     @if (_event.State is EventState.Open or EventState.Expired or EventState.Finalized)
     {
@@ -222,6 +233,7 @@ else
     private string? _cancelReason;
     private readonly List<string> _newSlots = [string.Empty, string.Empty];
     private string? _newDeadline;
+    private readonly HashSet<string> _resendTo = new(StringComparer.Ordinal);
     private IDisposable? _subscription;
 
     protected override async Task OnInitializedAsync()
@@ -286,6 +298,24 @@ else
         _newSlots.AddRange([string.Empty, string.Empty]);
         _newDeadline = null;
         return string.Join(" ", new[] { $"Sent {slots.Count} new time(s) to everyone invited." }.Concat(view.Notices ?? []));
+    });
+
+    private void ToggleResend(string email, bool selected)
+    {
+        if (selected)
+            _resendTo.Add(email);
+        else
+            _resendTo.Remove(email);
+    }
+
+    private Task ResendAsync(IReadOnlyList<string>? emails) => RunAsync(async ev =>
+    {
+        var result = await Scheduling.ResendInvitationsAsync(_caller!, ev.ShortCode, emails, CancellationToken.None);
+        _resendTo.Clear();
+        var sent = result.Resent.Count == 0
+            ? "No invitation was resent."
+            : $"Resent the invitation to {string.Join(", ", result.Resent)}.";
+        return string.Join(" ", new[] { sent }.Concat(result.Event.Notices ?? []));
     });
 
     private Task CancelAsync() => RunAsync(async ev =>

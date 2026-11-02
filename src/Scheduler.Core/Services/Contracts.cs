@@ -107,6 +107,12 @@ public sealed record EventView(
     IReadOnlyList<string>? Notices = null);
 
 /// <summary>
+/// The result of resending invitations: the event, and the addresses the invitation was queued for. Anyone
+/// asked for but skipped (unsubscribed, bounced, or sent it too recently) is explained in the event's notices.
+/// </summary>
+public sealed record ResendResult(EventView Event, IReadOnlyList<string> Resent);
+
+/// <summary>
 /// What the organizer's agent needs to create the real meeting in the organizer's own calendar.
 /// Uses local time plus zone, not UTC, so the calendar event stays anchored to the zone.
 /// </summary>

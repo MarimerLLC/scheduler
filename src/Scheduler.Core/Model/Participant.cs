@@ -23,6 +23,10 @@ public sealed class Participant
     public required byte[] TokenNonce { get; set; }
 
     public Instant InvitedAt { get; set; }
+
+    /// <summary>When the organizer last had the invitation sent again, if ever. Paces resends.</summary>
+    public Instant? InvitationResentAt { get; set; }
+
     public Instant? LastRemindedAt { get; set; }
     public Instant? RespondedAt { get; set; }
 
