@@ -7,8 +7,9 @@ internal sealed class SubscriptionOptions
 
     /// <summary>
     /// How long one listen stream stays open before the server ends it and the client reconnects (which also
-    /// refreshes its bearer token). Below the idle cutoff of the proxies in front of the server, since a quiet
-    /// stream sends nothing; see docs/design.md, "Push updates".
+    /// refreshes its bearer token, checked only when a stream opens). Well under the 1-hour access token lifetime,
+    /// and under the idle cutoff of the proxies in front of the server (the Tailscale Funnel showed none in four
+    /// hours); see docs/design.md, "Push updates".
     /// </summary>
     public double StreamMinutes { get; set; } = 25;
 

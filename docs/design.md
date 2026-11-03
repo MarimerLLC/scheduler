@@ -606,7 +606,11 @@ side, RockBot's MCP bridge, is [MarimerLLC/rockbot#768](https://github.com/Marim
 **No keepalives.** The SDK has no keepalive API for a request stream, and writing SSE comments to the response
 directly would race its writer. Instead the server ends each stream after `Scheduler:Subscriptions:StreamMinutes`
 and the client reconnects, which also refreshes its bearer token. The value has to stay below the idle cutoff
-of whatever sits between client and server (the Tailscale Funnel, below), since a quiet stream sends nothing.
+of whatever sits between client and server, since a quiet stream sends nothing; the Tailscale Funnel showed none
+in four hours (below). What sets it is the token: the bearer token is checked only when the stream opens, so the
+lifetime bounds how long a stream outlives an expired or revoked token. 25 minutes keeps that well under the
+1-hour access token lifetime, and a reconnect is one request plus a status read per watched event. Losing access
+to an event is seen sooner, at the next change, because every change is read again as the caller.
 
 Settings, under `Scheduler:Subscriptions`: `StreamMinutes` (25), `MaxStreamsPerCaller` (5),
 `MaxIdleStreamsPerCaller` (20), `MaxUrisPerStream` (50). Clients on protocol revisions before 2026-07-28 get method-not-found for `subscriptions/listen` (the SDK
@@ -619,10 +623,11 @@ Constraints:
 
 - **Single replica.** `IEventChanges` only works within one process; the live pages already require that.
 - **Token lifetime.** The bearer token is checked when the stream opens. Clients reconnect to refresh it.
-- **Tailscale Funnel.** Clients outside the cluster, RockBot included, connect through the Funnel. The default
-  `StreamMinutes` of 25 is provisional until an idle listen stream through the Funnel has been measured: it
-  must stay comfortably below the Funnel's idle cutoff, if it has one. Clients reconnect when a stream ends
-  either way, which the design already tolerates.
+- **Tailscale Funnel.** Clients outside the cluster, RockBot included, connect through the Funnel. Measured
+  on 2026-11-03 against the 1.0.9-pr37 test build with `StreamMinutes` raised to 240: three listen streams
+  opened through `https://scheduler.tail920062.ts.net/mcp` stayed open, idle, for the full four hours, and the
+  server ended them itself. A change made after 26 idle minutes reached all three within a second. So the
+  Funnel has no idle cutoff under four hours, and the 25-minute lifetime has plenty of room.
 - **Who benefits.** Only clients that support `subscriptions/listen`: RockBot once #768 lands. Everyone else
   relies on email.
 
