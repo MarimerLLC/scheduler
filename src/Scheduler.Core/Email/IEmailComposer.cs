@@ -37,6 +37,9 @@ public interface IEmailComposer
     /// <summary>To the organizer: required participant <paramref name="who"/> answered no to every proposed time.</summary>
     Task<ComposedEmail> CantMakeAnyTimeAsync(SchedulingEvent ev, Participant who, string dashboardUrl);
 
+    /// <summary>To the organizer: participant <paramref name="who"/> suggested <paramref name="suggestions"/>, times not on the poll.</summary>
+    Task<ComposedEmail> SlotsSuggestedAsync(SchedulingEvent ev, Participant who, IReadOnlyList<SlotSuggestion> suggestions, string dashboardUrl);
+
     /// <summary>To the organizer: every required participant has answered every slot.</summary>
     Task<ComposedEmail> AllRespondedAsync(SchedulingEvent ev, string dashboardUrl);
 

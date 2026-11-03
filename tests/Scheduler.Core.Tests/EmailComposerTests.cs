@@ -26,6 +26,31 @@ public sealed class EmailComposerTests
     }
 
     [TestMethod]
+    public void ASuggestedTimeIsShownToTheOrganizerInTheirZone()
+    {
+        var ev = TestEvents.WithSlots(1);
+        var bob = ev.AddParticipant("bob@example.com");
+        bob.DisplayName = "Bob";
+        var suggestion = new SlotSuggestion
+        {
+            EventId = ev.Id,
+            ParticipantId = bob.Id,
+            TimeZoneId = "Europe/London",
+            LocalStart = new LocalDateTime(2026, 11, 9, 15, 0),
+            Start = Instant.FromUtc(2026, 11, 9, 15, 0),
+        };
+
+        var email = Composer.SlotsSuggested(ev, bob, [suggestion], "https://sched.test/events/1");
+
+        Assert.AreEqual($"[sched:{ev.ShortCode}] Bob suggested another time: Planning", email.Subject);
+        StringAssert.Contains(email.TextBody, "Bob (bob@example.com) suggested a time for \"Planning\" that isn't on the poll:");
+        StringAssert.Contains(email.TextBody, "  - Mon Nov 9, 9:00 AM CST (UTC-06:00)");
+        StringAssert.Contains(email.TextBody, "Nothing changes unless you add a time.");
+        StringAssert.Contains(email.TextBody, "Add or dismiss it here: https://sched.test/events/1");
+        StringAssert.Contains(email.TextBody, $"scheduling event {ev.ShortCode}");
+    }
+
+    [TestMethod]
     public void OrganizerTextIsQuotedNotPresentedAsInstructions()
     {
         var ev = TestEvents.WithSlots(1);

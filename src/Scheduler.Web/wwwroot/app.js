@@ -2,10 +2,15 @@
 window.scheduler = { timeZone: () => Intl.DateTimeFormat().resolvedOptions().timeZone };
 
 // Progressive enhancement for static pages: shows each proposed time in the viewer's own zone, next to the
-// organizer's. Pages work without it. Elements: <time datetime="UTC" data-viewer-local data-zone="Organizer/Zone" hidden>.
+// organizer's, and fills zone fields marked data-viewer-zone with the viewer's zone. Pages work without it.
+// Elements: <time datetime="UTC" data-viewer-local data-zone="Organizer/Zone" hidden>, <input data-viewer-zone>.
 (() => {
     const showViewerTimes = () => {
         const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        // A zone field for times the viewer types (suggesting a time) defaults to their own zone.
+        for (const input of document.querySelectorAll('input[data-viewer-zone]')) {
+            if (zone) input.value = zone;
+        }
         for (const element of document.querySelectorAll('time[data-viewer-local]')) {
             if (!zone || element.dataset.zone === zone) {
                 element.hidden = true;

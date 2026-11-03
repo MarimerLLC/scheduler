@@ -32,10 +32,26 @@ public interface ISchedulingService
     Task<EventView> VoteAsync(CallerIdentity caller, string eventRef, IReadOnlyList<VoteInput> votes, string? note, bool emailReceipt, CancellationToken cancellationToken);
 
     /// <summary>
+    /// A participant suggests times that aren't on the poll, and the organizer is emailed about them. The organizer
+    /// decides: <see cref="ProposeMoreSlotsAsync"/> with the suggestions' IDs adds them, <see cref="DismissSuggestionsAsync"/>
+    /// doesn't. Safe to retry: a time the caller already suggested isn't suggested again (a notice says so), and only new
+    /// suggestions email the organizer. Votes don't change, and neither does the event's version.
+    /// </summary>
+    Task<EventView> SuggestSlotsAsync(CallerIdentity caller, string eventRef, IReadOnlyList<SlotInput> slots, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Adds a round of slots and emails participants about them. Reopens an expired or finalized event
     /// (rescheduling). <paramref name="respondBy"/> sets a new deadline; a deadline already past is cleared.
+    /// The round is <paramref name="slots"/> plus the times of the suggestions in <paramref name="suggestionIds"/>,
+    /// which are marked added, as is any waiting suggestion of a time the round adds.
     /// </summary>
-    Task<EventView> ProposeMoreSlotsAsync(CallerIdentity caller, string eventRef, IReadOnlyList<SlotInput> slots, string? respondBy, uint expectedVersion, CancellationToken cancellationToken);
+    Task<EventView> ProposeMoreSlotsAsync(CallerIdentity caller, string eventRef, IReadOnlyList<SlotInput>? slots, IReadOnlyList<Guid>? suggestionIds, string? respondBy, uint expectedVersion, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Organizer only: decides not to add the suggested times in <paramref name="suggestionIds"/>. No email; the person
+    /// who suggested a time sees on their voting page that it wasn't added. Dismissing one again changes nothing.
+    /// </summary>
+    Task<EventView> DismissSuggestionsAsync(CallerIdentity caller, string eventRef, IReadOnlyList<Guid> suggestionIds, uint expectedVersion, CancellationToken cancellationToken);
 
     Task<EventView> WithdrawSlotAsync(CallerIdentity caller, string eventRef, Guid slotId, uint expectedVersion, CancellationToken cancellationToken);
 

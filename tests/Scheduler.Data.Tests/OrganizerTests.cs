@@ -23,7 +23,7 @@ public sealed class OrganizerTests
         await _h.VoteAsync(Harness.Bob, ev, (0, VoteValue.Preferred), (1, VoteValue.Preferred), (2, VoteValue.Preferred));
         var before = (await _h.OutboxAsync()).Count;
 
-        var view = await _h.Service.ProposeMoreSlotsAsync(Harness.Rocky, ev.ShortCode, Friday, null, ev.Version, CancellationToken.None);
+        var view = await _h.Service.ProposeMoreSlotsAsync(Harness.Rocky, ev.ShortCode, Friday, suggestionIds: null, null, ev.Version, CancellationToken.None);
 
         Assert.HasCount(4, view.Slots);
         Assert.AreNotEqual(ev.Version, view.Version);
@@ -42,7 +42,7 @@ public sealed class OrganizerTests
     public async Task AStaleVersionIsRejected()
     {
         var ev = await _h.CreateAsync();
-        await _h.Service.ProposeMoreSlotsAsync(Harness.Rocky, ev.ShortCode, Friday, null, ev.Version, CancellationToken.None);
+        await _h.Service.ProposeMoreSlotsAsync(Harness.Rocky, ev.ShortCode, Friday, suggestionIds: null, null, ev.Version, CancellationToken.None);
 
         var ex = await Assert.ThrowsExactlyAsync<SchedulingConflictException>(
             () => _h.Service.WithdrawSlotAsync(Harness.Rocky, ev.ShortCode, ev.Slots[0].SlotId, ev.Version, CancellationToken.None));
@@ -130,7 +130,7 @@ public sealed class OrganizerTests
         var ev = await _h.CreateAsync();
         var finalized = await _h.Service.FinalizeAsync(Harness.Rocky, ev.ShortCode, ev.Slots[0].SlotId, ev.Version, CancellationToken.None);
 
-        var view = await _h.Service.ProposeMoreSlotsAsync(Harness.Rocky, ev.ShortCode, Friday, null, finalized.Event.Version, CancellationToken.None);
+        var view = await _h.Service.ProposeMoreSlotsAsync(Harness.Rocky, ev.ShortCode, Friday, suggestionIds: null, null, finalized.Event.Version, CancellationToken.None);
 
         Assert.AreEqual(EventState.Open, view.State);
         Assert.IsNull(view.FinalizedSlotId);
@@ -151,7 +151,7 @@ public sealed class OrganizerTests
         });
         var expired = await _h.GetAsync(Harness.Rocky, ev);
 
-        var view = await _h.Service.ProposeMoreSlotsAsync(Harness.Rocky, ev.ShortCode, Friday, null, expired.Version, CancellationToken.None);
+        var view = await _h.Service.ProposeMoreSlotsAsync(Harness.Rocky, ev.ShortCode, Friday, suggestionIds: null, null, expired.Version, CancellationToken.None);
 
         Assert.AreEqual(EventState.Open, view.State);
         Assert.IsNull(view.RespondBy);
@@ -163,7 +163,7 @@ public sealed class OrganizerTests
     {
         var ev = await _h.CreateAsync();
 
-        var view = await _h.Service.ProposeMoreSlotsAsync(Harness.Rocky, ev.ShortCode, Friday, "2026-11-02T12:00", ev.Version, CancellationToken.None);
+        var view = await _h.Service.ProposeMoreSlotsAsync(Harness.Rocky, ev.ShortCode, Friday, suggestionIds: null, "2026-11-02T12:00", ev.Version, CancellationToken.None);
 
         Assert.AreEqual("Mon Nov 2, 12:00 PM CST (UTC-06:00)", view.RespondBy);
     }
@@ -187,7 +187,7 @@ public sealed class OrganizerTests
         await Assert.ThrowsExactlyAsync<SchedulingConflictException>(
             () => _h.Service.FinalizeAsync(Harness.Rocky, ev.ShortCode, ev.Slots[0].SlotId, view.Version, CancellationToken.None));
         await Assert.ThrowsExactlyAsync<SchedulingConflictException>(
-            () => _h.Service.ProposeMoreSlotsAsync(Harness.Rocky, ev.ShortCode, Friday, null, view.Version, CancellationToken.None));
+            () => _h.Service.ProposeMoreSlotsAsync(Harness.Rocky, ev.ShortCode, Friday, suggestionIds: null, null, view.Version, CancellationToken.None));
         await Assert.ThrowsExactlyAsync<SchedulingConflictException>(
             () => _h.Service.CancelAsync(Harness.Rocky, ev.ShortCode, "Again", CancellationToken.None));
     }

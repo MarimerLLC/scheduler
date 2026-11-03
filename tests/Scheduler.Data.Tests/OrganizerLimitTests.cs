@@ -51,7 +51,7 @@ public sealed class OrganizerLimitTests
     {
         var ev = await _h.CreateAsync(Harness.Request(participants: [new("a@example.com"), new("b@example.com"), new("c@example.com"), new("d@example.com"), new("e@example.com")]));
 
-        var more = await _h.Service.ProposeMoreSlotsAsync(Harness.Rocky, ev.ShortCode, [new("2026-11-06T10:00", "America/Chicago")], null, ev.Version, CancellationToken.None);
+        var more = await _h.Service.ProposeMoreSlotsAsync(Harness.Rocky, ev.ShortCode, [new("2026-11-06T10:00", "America/Chicago")], suggestionIds: null, null, ev.Version, CancellationToken.None);
 
         Assert.HasCount(4, more.Slots);
         Assert.HasCount(10, await _h.OutboxAsync());

@@ -17,6 +17,12 @@ public static class FieldLimits
     public const int MaxSlotsPerEvent = 20;
     public const int MaxParticipantsPerEvent = 50;
 
+    /// <summary>
+    /// How many suggested times one participant can have waiting for the organizer at once. Each suggestion emails the
+    /// organizer, so this also bounds the email one participant can cause before the organizer acts.
+    /// </summary>
+    public const int MaxPendingSuggestionsPerParticipant = 5;
+
     public const int MinDurationMinutes = 5;
     public const int MaxDurationMinutes = 8 * 60;
 }

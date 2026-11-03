@@ -131,6 +131,7 @@ All tables in PostgreSQL via EF Core 10. Times are NodaTime types, mapped native
 | `ProposedSlot` | `Id` | A candidate start: `LocalStart` + `TimeZoneId` (source of truth) and derived `Start` (`Instant`). `Round`, `WithdrawnAt`. |
 | `Participant` | `Id`; unique (`EventId`, `Email`) | An invited address, its role (required/optional), the random nonce its voting-link token is derived from, invited/resent/reminded/responded times, optional note. |
 | `Vote` | (`ParticipantId`, `SlotId`) | One answer. The composite key makes voting an upsert, so retries are safe. Records the channel. |
+| `SlotSuggestion` | `Id` | A time a participant suggested adding to the poll: `LocalStart` + `TimeZoneId` (source of truth, the zone they gave) and derived `Start`, who suggested it, when, and the organizer's decision (`Pending`, `Added` with the slot it became, or `Dismissed`). See [Suggested times](#suggested-times). |
 | `UserAccount` | `Id` | A signed-in person. |
 | `OrganizerGrant` | `Pattern` | An admin's grant to organize: an exact address or `*@domain`, with an optional note and who granted it when. |
 | `UserEmail` | `Email` | A verified address owned by one account. An account can have several. |
@@ -180,14 +181,14 @@ stateDiagram-v2
 Cancelled is terminal. Implemented in `SchedulingEvent.CanTransition`; anything else is a
 `SchedulingConflictException`.
 
-**Concurrency.** Organizer edits (`propose_more_slots`, `withdraw_slot`, `finalize_event`) carry the
+**Concurrency.** Organizer edits (`propose_more_slots`, `withdraw_slot`, `finalize_event`, `dismiss_suggestions`) carry the
 `version` from the `get_event` result the agent acted on. A mismatch is rejected ("the event changed since
 you read it"), so two agents, or an agent and the web UI, can't overwrite each other. The service checks
 the version up front for a clear message, and PostgreSQL checks it again at save (`xmin`), so an edit that
 races another one is refused too. Every organizer edit rewrites the event row (it sets `UpdatedAt` and marks
 it modified even when only child rows changed), which is what moves the version. Votes don't touch the
 event row, so a vote arriving doesn't invalidate the organizer's version: each participant's votes are
-their own rows.
+their own rows. A participant's suggested time is the same: its own row, so suggesting doesn't move the version.
 
 ## Votes, visibility and ranking
 
@@ -201,6 +202,7 @@ their own rows.
 | Who voted what | ✓ | — | — |
 | Participant names and addresses | ✓ | ✓ (like a normal invite) | — |
 | Notes to the organizer | ✓ | own only | — |
+| Suggested times, and who suggested each | ✓ | own only | — |
 
 "Anyone else" includes someone with a valid event ID: the answer is always "no event with that ID is
 visible to you", whether or not it exists.
@@ -228,6 +230,36 @@ The same labels are used on the voting page, the event page and in tallies. Only
 - Voting again replaces earlier answers.
 - Votes on a withdrawn slot are deleted with it.
 - The organizer doesn't vote: they proposed the slots, so every slot works for them.
+
+### Suggested times
+
+When none of the times work, someone invited can suggest others ([#38](https://github.com/MarimerLLC/scheduler/issues/38)):
+`suggest_slots`, or the "None of these work?" form on the voting page. A suggestion goes only to the organizer, who
+decides. Until then it changes nothing anyone else votes on, because every proposed time should already work for the
+organizer, and only they can check that against their calendar.
+
+- **Who and when.** A participant (signed in or by voting link), while the event is open. The organizer can't suggest;
+  they propose. Each time is local wall time plus an IANA zone like a slot, resolved by `SlotTimeResolver`; the
+  participant's own zone is fine, and the organizer sees it in theirs (and as it was suggested).
+- **The organizer is emailed** ("Suggested time", below), once per call that adds suggestions, listing them in the
+  organizer's zone with a link to the event page. No free text travels with a suggestion: anything the participant
+  wants to say goes in their note, which stays on the page.
+- **Several at once**, up to 5 per call, and at most 5 waiting (future, undecided) per participant
+  (`FieldLimits.MaxPendingSuggestionsPerParticipant`). That cap also bounds the email one participant can cause the
+  organizer; the organizer deciding frees it.
+- **Safe to retry.** A time already on the poll, or already suggested by the caller, isn't suggested again; a notice
+  says which. A time the organizer dismissed (or added and then withdrew) can't be suggested again either, so a
+  participant can't keep asking. Only calls that add a suggestion email the organizer.
+- **Adding** is proposing: `propose_more_slots` with the suggestions' IDs (alone, or with the organizer's own times in
+  the same round), or "Add to the poll" on the event page. Everything about proposing applies: the version, the
+  20-time limit, reopening an expired or finalized event, and the "New times" email to everyone invited, the person
+  who suggested it included (they vote on it like anyone). The slot keeps the zone it was suggested in. Any waiting
+  suggestion of a time the round adds is marked added too, whoever made it, even when the organizer typed it in.
+- **Dismissing** (`dismiss_suggestions`, or "Dismiss") emails no one: being told no by email reads worse than seeing
+  "not added by the organizer" on the voting page. It takes the version like any organizer edit. The organizer can
+  still add a dismissed time later; an added one can't be dismissed (withdraw the slot instead).
+- **Visibility.** The organizer sees every suggestion and who made it; a participant sees only their own, with its
+  status. Other participants don't, for the same reason they don't see each other's votes.
 
 ### Ranking
 
@@ -474,9 +506,11 @@ meant for the caller come back as tool errors with a specific message.
 |---|---|---|---|
 | `create_event` | Allowlisted organizer | open-world | Validates (title ≤ 120, duration 5–480 min, 1–20 slots, ≤ 50 participants, slots in the future and distinct, respond-by in the future), opens the event, queues one invitation per participant. Returns the event with `id` and `shortCode`. A client that supports MRTR is asked for a missing title, time zone, invite list or candidate times, and offered once to add a description when the title is short. |
 | `list_my_events` | Anyone signed in | read-only | Filter `needs_my_vote` (default), `organizing` or `all`. |
-| `get_event` | Organizer or participant | read-only | Slots with totals and the caller's own votes; for the organizer, each participant's votes and the ranking. Optional `timeZone` adds viewer-local times. |
+| `get_event` | Organizer or participant | read-only | Slots with totals and the caller's own votes; for the organizer, each participant's votes and the ranking. `suggestions`: every suggested time for the organizer, the caller's own for a participant. Optional `timeZone` adds viewer-local times. |
 | `vote` | Participant | idempotent | Upserts answers (`preferred`, `yes`, `if_necessary`, `no`) for one or more slots, plus an optional note (≤ 280). With `emailReceipt`, emails the voter a copy of their answers (only when the user asks for one); the result's notices say where it went or why it didn't, and a retry that changes nothing doesn't send another, so the tool stays idempotent. Emails the organizer once every required participant has responded, and right away when a required participant's answers become no on every current time. |
-| `propose_more_slots` | Organizer | open-world | Adds a round of slots. Reopens an expired or finalized event (rescheduling). Emails participants about the new slots. Needs `version`. |
+| `suggest_slots` | Participant | idempotent, open-world | While the event is open, suggests 1–5 times that aren't on the poll and emails the organizer. A time already proposed or already suggested isn't suggested again (notices say so). See [Suggested times](#suggested-times). |
+| `propose_more_slots` | Organizer | open-world | Adds a round of slots: new times, and/or the times of the suggestions in `suggestionIds`, which are marked added. Reopens an expired or finalized event (rescheduling). Emails participants about the new slots. Needs `version`. |
+| `dismiss_suggestions` | Organizer | idempotent | Decides not to add suggested times. No email; the participant sees it wasn't added. Needs `version`. |
 | `withdraw_slot` | Organizer | destructive, idempotent | Removes a slot that no longer works for the organizer and deletes its votes. No email. Needs `version`. |
 | `finalize_event` | Organizer | open-world | Picks the slot, emails everyone, returns `localStart`, `timeZone`, `durationMinutes`, `attendeeEmails` for creating the calendar event. Needs `version`. The agent should re-check the organizer's calendar first. |
 | `resend_invitations` | Organizer | open-world | While the event is open, emails the invitation again (same personal voting link, current times) to the listed participants, or to everyone invited if none are listed. An address that isn't invited is refused; anyone unsubscribed, bounced, or sent the invitation within `Scheduler:InvitationResendCooldownMinutes` (60) is skipped with a notice. Returns `resent`, the addresses it went to. |
@@ -530,7 +564,7 @@ server's entry so free-text questions reach the agent, which answers from its co
 ### Prompts
 
 - `handle_scheduling_requests(timeZone)`: work through pending requests: list, check each slot against
-  the user's calendar, propose answers, confirm, vote.
+  the user's calendar, propose answers, confirm, vote; when no time works, offer to suggest free times instead.
 - `schedule_meeting(participants, durationMinutes, topic, timeZone)`: find 5–12 free candidate slots,
   confirm, create the event, report the short code.
 
@@ -629,10 +663,10 @@ Blazor with per-page render modes.
 | Page | Render mode | Purpose |
 |---|---|---|
 | `/` | Static | What this is; how to connect an agent (the `/mcp` URL). |
-| `/e/{shortCode}?t=...` | **Static SSR with plain form posts** | Voting. Opened from email, often on a phone: no long-lived connection, survives flaky networks, works without JavaScript (`app.js` only adds each time in the viewer's own zone). See [Magic links](#magic-links-voters-without-an-account). |
-| `/events` | InteractiveServer | Dashboard: what is waiting for my answer, the events I organize with how many have answered (live), events I'm invited to. |
+| `/e/{shortCode}?t=...` | **Static SSR with plain form posts** | Voting, and suggesting other times (a second form, with the viewer's own zone filled in by `app.js`, the organizer's without it). Opened from email, often on a phone: no long-lived connection, survives flaky networks, works without JavaScript (`app.js` only adds each time in the viewer's own zone). See [Magic links](#magic-links-voters-without-an-account). |
+| `/events` | InteractiveServer | Dashboard: what is waiting for my answer, the events I organize with how many have answered and how many suggested times wait (live), events I'm invited to. |
 | `/events/new` | InteractiveServer | Compose an event by hand: times in one zone (the browser's by default), invitees, optional deadline. Sending opens it, like `create_event`. |
-| `/events/{id}` | InteractiveServer | One event, for its organizer: ranked times with tallies, who answered what and their notes (live); pick, withdraw, resend the invitation to selected people or everyone, propose more times or reschedule, cancel. Picking shows what to put in the calendar. Participants get a link to the voting page. |
+| `/events/{id}` | InteractiveServer | One event, for its organizer: ranked times with tallies, who answered what and their notes (live); pick, withdraw, resend the invitation to selected people or everyone, add or dismiss suggested times, propose more times or reschedule, cancel. Picking shows what to put in the calendar. Participants get a link to the voting page. |
 | `/account` | InteractiveServer | Verified addresses (add by email link, remove), personal access tokens. |
 | `/signin/email` | Static SSR with a form post | Offers to email a sign-in link to an address the provider didn't verify. |
 | `/verify?t=...` | Static SSR with a form post | Confirms an emailed link: signs in, or adds the address to the signed-in account. |
@@ -679,7 +713,8 @@ Outbound only. Nothing parses inbound mail.
 | Message | To | When |
 |---|---|---|
 | Invitation | Each participant | Event opened; again when the organizer resends it (`resend_invitations`, or the event page) |
-| New times | Participants | `propose_more_slots` |
+| New times | Participants | `propose_more_slots`, including the organizer adding a suggested time |
+| Suggested time | Organizer | A participant suggests one or more times that aren't on the poll (once per call that adds any); lists them in the organizer's zone and links the event page |
 | Reminder | Participants who haven't answered every slot | Once per deadline, about 24 h before respond-by; lists only the unanswered times |
 | Everyone has responded | Organizer | Last required participant votes |
 | Can't make any time | Organizer | A vote leaves a required participant with no on every current time (again after new times, if they say no to those too). Points to the event page for any note rather than quoting it |
@@ -747,7 +782,7 @@ call, safe to repeat, audited as the system); `SchedulingJobRunner` runs them on
 | Reminders | 15 min | One reminder per participant who hasn't answered every time, once the deadline is within `Scheduler:ReminderLeadHours` (24). Once per deadline: a new deadline gets a new reminder. Not for someone invited after that window opened; they just got the invitation |
 | Retention purge | Daily | Deletes events closed more than `Scheduler:RetentionDays` (30) ago, with their slots, participants, votes, audit and outbox rows; deletes drafts untouched for `Scheduler:DraftRetentionDays` (7), and requests to organize decided more than `Scheduler:OrganizerRequestCooldownDays` (30) ago |
 | Identity cleanup | Hourly | Prunes OAuth tokens and authorizations that lapsed over 14 days ago (OpenIddict's pruning); deletes dynamically registered clients with no authorization or token a day after registering, and expired address links (implemented) |
-| tzdb check | On startup | If the tzdb version changed (kept in `ServerSettings`), recompute `Start` from local time and zone for every future slot of an event that isn't cancelled; a time the new rules skip moves forward rather than being lost |
+| tzdb check | On startup | If the tzdb version changed (kept in `ServerSettings`), recompute `Start` from local time and zone for every future slot of an event that isn't cancelled, and every future suggested time still waiting; a time the new rules skip moves forward rather than being lost |
 
 ## Administration
 
@@ -878,6 +913,7 @@ which has that person's mail and calendar tools.
 - Hard length limits (`FieldLimits`): title 120, description 1000, note 280, display name 100.
 - Server instructions and both prompts say to treat these fields as data.
 - No user-supplied text ever appears in tool descriptions or server instructions.
+- A suggested time carries no text, only a time and zone, so suggesting adds no channel into the organizer's inbox.
 - Every state-changing flow tells the agent to confirm with its user first, which is natural because the
   user is in the session anyway.
 
@@ -898,7 +934,7 @@ which has that person's mail and calendar tools.
 
 ## Audit log
 
-`AuditEntry` rows record actions such as `event.created`, `vote.cast` (with where a copy was emailed), `slot.withdrawn`,
+`AuditEntry` rows record actions such as `event.created`, `vote.cast` (with where a copy was emailed), `slots.suggested`, `suggestions.dismissed`, `slot.withdrawn`,
 `event.finalized`, `email.bounced`, with the actor's address (or none, for the system) and the channel
 (`mcp`, `web`, `email`, `system`). Useful for "why was this finalized?" and for debugging agent behavior.
 Purged with the event. Admin actions (`organizer.added`, `organizer.removed`, `organizer.requested`, `organizer.request.approved`, `organizer.request.declined`), token changes

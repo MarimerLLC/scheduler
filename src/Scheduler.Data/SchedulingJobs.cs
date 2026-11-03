@@ -171,6 +171,19 @@ public sealed class SchedulingJobs(
             count++;
         }
 
+        // A waiting suggestion keeps the local time it was suggested as, too, so adding it later proposes what was meant.
+        var suggestions = await db.Suggestions
+            .Where(s => s.Start > now && s.Status == SuggestionStatus.Pending)
+            .ToListAsync(cancellationToken);
+        foreach (var suggestion in suggestions)
+        {
+            var start = SlotTimeResolver.GetZone(suggestion.TimeZoneId).AtLeniently(suggestion.LocalStart).ToInstant();
+            if (start == suggestion.Start)
+                continue;
+            suggestion.Start = start;
+            moved.Add(suggestion.EventId);
+        }
+
         if (setting is null)
             db.ServerSettings.Add(new ServerSetting { Key = ServerSetting.TzdbVersion, Value = version, UpdatedAt = now });
         else

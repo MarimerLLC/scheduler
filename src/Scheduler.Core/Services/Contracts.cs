@@ -47,8 +47,9 @@ public enum EventListFilter
 }
 
 /// <summary>
-/// One event in a list. <see cref="Responded"/> and <see cref="Invited"/> are for the organizer only: how many
-/// participants have answered every proposed time, out of how many were invited.
+/// One event in a list. <see cref="Responded"/>, <see cref="Invited"/> and <see cref="PendingSuggestions"/> are for the
+/// organizer only: how many participants have answered every proposed time, out of how many were invited, and how many
+/// times participants suggested that are waiting for the organizer to add or dismiss.
 /// </summary>
 public sealed record EventSummary(
     Guid Id,
@@ -59,7 +60,8 @@ public sealed record EventSummary(
     bool NeedsMyVote,
     string? RespondBy,
     int? Responded = null,
-    int? Invited = null);
+    int? Invited = null,
+    int? PendingSuggestions = null);
 
 /// <summary>Per-slot totals. Shown to every participant; who voted what is shown only to the organizer.</summary>
 public sealed record SlotTally(int Preferred, int Yes, int IfNecessary, int No, int Pending);
@@ -87,6 +89,19 @@ public sealed record ParticipantView(
     string? Note,
     IReadOnlyDictionary<Guid, VoteValue>? Votes);
 
+/// <summary>
+/// A time a participant suggested adding to the poll. The organizer sees everyone's, with who suggested each; a
+/// participant sees only their own. <see cref="SuggestedLocal"/> is the time in the zone it was suggested in.
+/// </summary>
+public sealed record SuggestionView(
+    Guid SuggestionId,
+    string StartUtc,
+    string OrganizerLocal,
+    string SuggestedLocal,
+    SuggestionStatus Status,
+    string SuggestedBy,
+    string? SuggestedByName);
+
 public sealed record EventView(
     Guid Id,
     string ShortCode,
@@ -104,7 +119,9 @@ public sealed record EventView(
     IReadOnlyList<SlotView> Slots,
     IReadOnlyList<ParticipantView> Participants,
     // Things the caller should know about how the request was applied, e.g. a dropped duplicate address.
-    IReadOnlyList<string>? Notices = null);
+    IReadOnlyList<string>? Notices = null,
+    // Times participants suggested, earliest first: all of them for the organizer, the caller's own for a participant.
+    IReadOnlyList<SuggestionView>? Suggestions = null);
 
 /// <summary>
 /// The result of resending invitations: the event, and the addresses the invitation was queued for. Anyone

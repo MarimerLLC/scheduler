@@ -100,12 +100,21 @@ internal sealed partial class SchedulerApp(params (string Key, string Value)[] s
         /// fields Blazor renders (antiforgery token, handler name) plus <paramref name="fields"/>. A page with
         /// several forms gets the first one's handler.
         /// </summary>
-        public async Task<HttpResponseMessage> SubmitFormAsync(string url, params (string Name, string Value)[] fields)
+        public Task<HttpResponseMessage> SubmitFormAsync(string url, params (string Name, string Value)[] fields) =>
+            SubmitFormAsync(url, formName: null, fields);
+
+        /// <summary>Posts the page's form named <paramref name="formName"/> (its <c>@formname</c>), or its first form.</summary>
+        public async Task<HttpResponseMessage> SubmitFormAsync(string url, string? formName, params (string Name, string Value)[] fields)
         {
             var page = await Http.GetAsync(url);
             var html = await page.Content.ReadAsStringAsync();
             Assert.AreEqual(HttpStatusCode.OK, page.StatusCode, html);
-            var hidden = HiddenInput().Matches(html)
+            var forms = Form().Matches(html).Select(m => m.Value).ToList();
+            var form = formName is null
+                ? forms.FirstOrDefault()
+                : forms.FirstOrDefault(f => f.Contains($"name=\"_handler\" value=\"{formName}\"", StringComparison.Ordinal));
+            Assert.IsNotNull(form, $"expected a form{(formName is null ? "" : $" named {formName}")} on {url}: {html}");
+            var hidden = HiddenInput().Matches(form)
                 .Select(m => new KeyValuePair<string, string>(WebUtility.HtmlDecode(m.Groups[1].Value), WebUtility.HtmlDecode(m.Groups[2].Value)))
                 .ToList();
             Assert.IsTrue(hidden.Any(f => f.Key == "_handler"), $"expected a form on {url}: {html}");
@@ -125,6 +134,9 @@ internal sealed partial class SchedulerApp(params (string Key, string Value)[] s
 
         [GeneratedRegex("""<input type="hidden" name="([^"]*)" value="([^"]*)"\s*/?>""")]
         private static partial Regex HiddenInput();
+
+        [GeneratedRegex("<form\\b.*?</form>", RegexOptions.Singleline)]
+        private static partial Regex Form();
     }
 }
 

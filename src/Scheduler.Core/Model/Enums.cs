@@ -70,3 +70,14 @@ public enum SuppressionReason
     Bounced,
     Complained
 }
+
+/// <summary>Where a participant's suggested time stands with the organizer.</summary>
+public enum SuggestionStatus
+{
+    /// <summary>Waiting for the organizer to add it or dismiss it.</summary>
+    Pending,
+    /// <summary>On the poll: the organizer proposed it as one of the event's times.</summary>
+    Added,
+    /// <summary>The organizer decided not to add it.</summary>
+    Dismissed
+}

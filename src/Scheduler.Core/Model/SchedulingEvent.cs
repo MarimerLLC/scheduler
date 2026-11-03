@@ -55,6 +55,9 @@ public sealed class SchedulingEvent
     public List<ProposedSlot> Slots { get; } = [];
     public List<Participant> Participants { get; } = [];
 
+    /// <summary>Times participants suggested adding to the poll, whatever the organizer decided about them.</summary>
+    public List<SlotSuggestion> Suggestions { get; } = [];
+
     /// <summary>Slots that haven't been withdrawn.</summary>
     public IEnumerable<ProposedSlot> ActiveSlots => Slots.Where(s => s.WithdrawnAt is null);
 

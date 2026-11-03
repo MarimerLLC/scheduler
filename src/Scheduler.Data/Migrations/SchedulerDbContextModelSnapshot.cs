@@ -727,6 +727,51 @@ namespace Scheduler.Data.Migrations
                     b.ToTable("ServerSettings");
                 });
 
+            modelBuilder.Entity("Scheduler.Core.Model.SlotSuggestion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<Instant?>("DecidedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uuid");
+
+                    b.Property<LocalDateTime>("LocalStart")
+                        .HasColumnType("timestamp without time zone");
+
+                    b.Property<Guid>("ParticipantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("SlotId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Instant>("Start")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<Instant>("SuggestedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("TimeZoneId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ParticipantId");
+
+                    b.HasIndex("EventId", "Start");
+
+                    b.ToTable("Suggestions");
+                });
+
             modelBuilder.Entity("Scheduler.Core.Model.UserAccount", b =>
                 {
                     b.Property<Guid>("Id")
@@ -859,6 +904,21 @@ namespace Scheduler.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Scheduler.Core.Model.SlotSuggestion", b =>
+                {
+                    b.HasOne("Scheduler.Core.Model.SchedulingEvent", null)
+                        .WithMany("Suggestions")
+                        .HasForeignKey("EventId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Scheduler.Core.Model.Participant", null)
+                        .WithMany()
+                        .HasForeignKey("ParticipantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Scheduler.Core.Model.UserEmail", b =>
                 {
                     b.HasOne("Scheduler.Core.Model.UserAccount", null)
@@ -905,6 +965,8 @@ namespace Scheduler.Data.Migrations
                     b.Navigation("Participants");
 
                     b.Navigation("Slots");
+
+                    b.Navigation("Suggestions");
                 });
 
             modelBuilder.Entity("Scheduler.Core.Model.UserAccount", b =>

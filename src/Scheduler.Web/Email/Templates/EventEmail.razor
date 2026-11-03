@@ -1,5 +1,5 @@
 @* One email about a scheduling event: invitation, new times, a copy of someone's answers, it's set, cancelled,
-   everyone has responded.
+   everyone has responded, a suggested time.
    The same content as the plain-text body (PlainTextEmailComposer), which agents read. Text the organizer
    wrote (title, description, reason) is shown as quoted data. *@
 
@@ -29,6 +29,17 @@
             @foreach (var slot in Slots.OrderBy(s => s.Start))
             {
                 <li>@SlotTimeFormatter.Display(slot.Start, Event.OrganizerTimeZone)</li>
+            }
+        </ul>
+    }
+
+    @if (Times is { Count: > 0 })
+    {
+        <p style="margin:0 0 4px;font-weight:600;">@SlotsHeading</p>
+        <ul style="margin:0 0 16px;padding-left:20px;">
+            @foreach (var start in Times)
+            {
+                <li>@SlotTimeFormatter.Display(start, Event.OrganizerTimeZone)</li>
             }
         </ul>
     }
@@ -87,6 +98,8 @@
     [Parameter, EditorRequired] public string Intro { get; set; } = "";
     [Parameter] public IReadOnlyList<ProposedSlot>? Slots { get; set; }
     [Parameter] public string SlotsHeading { get; set; } = "Proposed times";
+    // Times that aren't slots (yet), e.g. ones a participant suggested; shown under SlotsHeading.
+    [Parameter] public IReadOnlyList<NodaTime.Instant>? Times { get; set; }
     [Parameter] public ProposedSlot? Chosen { get; set; }
     [Parameter] public IReadOnlyList<(ProposedSlot Slot, string Answer)>? Answers { get; set; }
     [Parameter] public string? Note { get; set; }
