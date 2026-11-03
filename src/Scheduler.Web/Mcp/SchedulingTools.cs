@@ -284,19 +284,7 @@ public sealed class SchedulingTools(ISchedulingService scheduling, IAdminService
         _ => string.Join(", ", items[..^1]) + " and " + items[^1],
     };
 
-    private async Task<string> Run<T>(Func<CallerIdentity, Task<T>> action)
-    {
-        var caller = CallerResolver.FromHttpContext(http.HttpContext, Channel.Mcp)
-            ?? throw new McpException("You are not signed in to the scheduling server.");
-        try
-        {
-            return ToolJson.Serialize(await action(caller));
-        }
-        catch (SchedulingException ex)
-        {
-            throw new McpException(ex.Message);
-        }
-    }
+    private Task<string> Run<T>(Func<CallerIdentity, Task<T>> action) => McpCaller.RunAsync(http.HttpContext, action);
 
     private static EventListFilter ParseFilter(string? filter) => filter?.Trim().ToLowerInvariant() switch
     {
