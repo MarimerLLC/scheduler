@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -151,6 +153,15 @@ public sealed class SchedulingService(
         var ev = await LoadEventAsync(db, eventRef, tracking: false, cancellationToken);
         Authorize(ev, caller, account);
         return ToView(ev, caller, account, zone, notices: null);
+    }
+
+    public async Task<EventStatusView> GetEventStatusAsync(CallerIdentity caller, string eventRef, CancellationToken cancellationToken)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+        var account = await FindAccountAsync(db, caller, cancellationToken);
+        var ev = await LoadEventAsync(db, eventRef, tracking: false, cancellationToken);
+        var access = Authorize(ev, caller, account);
+        return ToStatus(ev, access.IsOrganizer);
     }
 
     public async Task<EventView> VoteAsync(CallerIdentity caller, string eventRef, IReadOnlyList<VoteInput> votes, string? note, CancellationToken cancellationToken)
@@ -803,6 +814,31 @@ public sealed class SchedulingService(
         });
 
     // ── Views ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The milestones only: participants get state, deadline and finalized slot, so their marker never moves on
+    /// someone else's vote; the organizer also gets who has responded and who rules out every time.
+    /// </summary>
+    private static EventStatusView ToStatus(SchedulingEvent ev, bool isOrganizer)
+    {
+        var respondBy = ev.RespondBy is { } by ? SlotTimeFormatter.Display(by, ev.OrganizerTimeZone) : null;
+        bool? everyoneResponded = isOrganizer ? EveryoneResponded(ev) : null;
+        IReadOnlyList<string>? rulesOutEveryTime = isOrganizer
+            ? ev.Participants.Where(ev.RulesOutEveryTime).Select(p => p.Email).Order(StringComparer.Ordinal).ToList()
+            : null;
+
+        var fields = string.Join('\n',
+            ev.State.ToString(),
+            respondBy ?? "",
+            ev.FinalizedSlotId?.ToString() ?? "",
+            isOrganizer ? "organizer" : "participant",
+            everyoneResponded?.ToString() ?? "",
+            rulesOutEveryTime is null ? "" : string.Join(',', rulesOutEveryTime));
+        var marker = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(fields)))[..16];
+
+        return new EventStatusView(
+            ev.Id, ev.ShortCode, ev.State, respondBy, ev.FinalizedSlotId, isOrganizer, everyoneResponded, rulesOutEveryTime, marker);
+    }
 
     private static EventView ToView(SchedulingEvent ev, CallerIdentity caller, UserAccount? account, string? viewerTimeZone, IReadOnlyList<string>? notices)
     {

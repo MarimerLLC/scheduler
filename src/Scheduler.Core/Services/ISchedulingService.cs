@@ -22,6 +22,12 @@ public interface ISchedulingService
     /// <param name="viewerTimeZone">IANA zone to add a viewer-local time to each slot, if given.</param>
     Task<EventView> GetEventAsync(CallerIdentity caller, string eventRef, string? viewerTimeZone, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// The event's milestones, with the same access check as <see cref="GetEventAsync"/>. Organizer-only fields
+    /// are null for participants. See docs/design.md, "Push updates".
+    /// </summary>
+    Task<EventStatusView> GetEventStatusAsync(CallerIdentity caller, string eventRef, CancellationToken cancellationToken);
+
     /// <summary>Records or overwrites the caller's votes. Safe to retry.</summary>
     /// <param name="note">Note to the organizer: null leaves it unchanged, empty clears it.</param>
     Task<EventView> VoteAsync(CallerIdentity caller, string eventRef, IReadOnlyList<VoteInput> votes, string? note, CancellationToken cancellationToken);
