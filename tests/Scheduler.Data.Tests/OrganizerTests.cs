@@ -179,14 +179,49 @@ public sealed class OrganizerTests
         Assert.AreEqual(EventState.Cancelled, view.State);
         var cancelled = (await _h.OutboxAsync()).Skip(before).ToList();
         Assert.HasCount(3, cancelled);
+        CollectionAssert.AreEquivalent(new[] { "bob@example.com", "carol@example.com", "dave@example.com" }, cancelled.Select(o => o.To).ToArray());
         Assert.IsTrue(cancelled.All(o => o.TextBody.Contains("\"Project shelved\"", StringComparison.Ordinal)));
+        Assert.IsTrue(cancelled.All(o => o.Subject.EndsWith("Invitation withdrawn: Planning", StringComparison.Ordinal)));
+        Assert.IsTrue(cancelled.All(o => o.ReplyTo == "rocky@example.com"));
 
         await Assert.ThrowsExactlyAsync<SchedulingConflictException>(
             () => _h.Service.FinalizeAsync(Harness.Rocky, ev.ShortCode, ev.Slots[0].SlotId, view.Version, CancellationToken.None));
         await Assert.ThrowsExactlyAsync<SchedulingConflictException>(
             () => _h.Service.ProposeMoreSlotsAsync(Harness.Rocky, ev.ShortCode, Friday, null, view.Version, CancellationToken.None));
         await Assert.ThrowsExactlyAsync<SchedulingConflictException>(
-            () => _h.Service.CancelAsync(Harness.Rocky, ev.ShortCode, null, CancellationToken.None));
+            () => _h.Service.CancelAsync(Harness.Rocky, ev.ShortCode, "Again", CancellationToken.None));
+    }
+
+    [TestMethod]
+    public async Task CancellingNeedsAReason()
+    {
+        var ev = await _h.CreateAsync();
+        var before = (await _h.OutboxAsync()).Count;
+
+        foreach (var reason in new[] { null, "", "   " })
+        {
+            var ex = await Assert.ThrowsExactlyAsync<SchedulingValidationException>(
+                () => _h.Service.CancelAsync(Harness.Rocky, ev.ShortCode, reason, CancellationToken.None));
+            StringAssert.Contains(ex.Message, "reason is required");
+        }
+
+        Assert.AreEqual(EventState.Open, (await _h.GetAsync(Harness.Rocky, ev)).State);
+        Assert.HasCount(before, await _h.OutboxAsync());
+    }
+
+    [TestMethod]
+    public async Task CancellingASetMeetingSaysItIsCancelled()
+    {
+        var ev = await _h.CreateAsync();
+        await _h.Service.FinalizeAsync(Harness.Rocky, ev.ShortCode, ev.Slots[0].SlotId, ev.Version, CancellationToken.None);
+        var before = (await _h.OutboxAsync()).Count;
+
+        await _h.Service.CancelAsync(Harness.Rocky, ev.ShortCode, "Budget cut", CancellationToken.None);
+
+        var cancelled = (await _h.OutboxAsync()).Skip(before).ToList();
+        Assert.HasCount(3, cancelled);
+        Assert.IsTrue(cancelled.All(o => o.Subject.EndsWith("Cancelled: Planning", StringComparison.Ordinal)));
+        Assert.IsTrue(cancelled.All(o => o.TextBody.Contains("\"Budget cut\"", StringComparison.Ordinal)));
     }
 
     [TestMethod]

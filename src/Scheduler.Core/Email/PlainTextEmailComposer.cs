@@ -45,17 +45,24 @@ public sealed class PlainTextEmailComposer(string mcpUrl, IUnsubscribeLinks? uns
         return EventEmail(recipient.Email, Subject(ev, $"Set: {ev.Title}"), body);
     }
 
-    public ComposedEmail Cancelled(SchedulingEvent ev, Participant recipient, string? reason)
+    public ComposedEmail Cancelled(SchedulingEvent ev, Participant recipient, string reason, bool meetingWasSet)
     {
         var body = new StringBuilder();
-        body.AppendLine($"{OrganizerName(ev)} has cancelled this meeting.");
+        body.AppendLine(CancelledIntro(ev, meetingWasSet));
         AppendEvent(body, ev);
-        if (!string.IsNullOrWhiteSpace(reason))
-        {
-            body.AppendLine("Reason given by the organizer:");
-            body.AppendLine($"  \"{reason}\"");
-        }
-        return EventEmail(recipient.Email, Subject(ev, $"Cancelled: {ev.Title}"), body);
+        body.AppendLine("Reason given by the organizer:");
+        body.AppendLine($"  \"{reason}\"");
+        return EventEmail(recipient.Email, Subject(ev, CancelledSubject(ev, meetingWasSet)), body);
+    }
+
+    public ComposedEmail CantMakeAnyTime(SchedulingEvent ev, Participant who, string dashboardUrl)
+    {
+        var body = new StringBuilder();
+        body.AppendLine(CantMakeAnyTimeIntro(ev, who));
+        body.AppendLine();
+        body.AppendLine($"See everyone's answers: {dashboardUrl}");
+        body.AppendLine(CantMakeAnyTimeClosing(ev, who));
+        return EventEmail(ev.OrganizerEmail, Subject(ev, $"{ParticipantName(who)} can't make any time: {ev.Title}"), body);
     }
 
     public ComposedEmail AllResponded(SchedulingEvent ev, string dashboardUrl)
@@ -158,8 +165,11 @@ public sealed class PlainTextEmailComposer(string mcpUrl, IUnsubscribeLinks? uns
     Task<ComposedEmail> IEmailComposer.FinalizedAsync(SchedulingEvent ev, Participant recipient, ProposedSlot slot) =>
         Task.FromResult(Finalized(ev, recipient, slot));
 
-    Task<ComposedEmail> IEmailComposer.CancelledAsync(SchedulingEvent ev, Participant recipient, string? reason) =>
-        Task.FromResult(Cancelled(ev, recipient, reason));
+    Task<ComposedEmail> IEmailComposer.CancelledAsync(SchedulingEvent ev, Participant recipient, string reason, bool meetingWasSet) =>
+        Task.FromResult(Cancelled(ev, recipient, reason, meetingWasSet));
+
+    Task<ComposedEmail> IEmailComposer.CantMakeAnyTimeAsync(SchedulingEvent ev, Participant who, string dashboardUrl) =>
+        Task.FromResult(CantMakeAnyTime(ev, who, dashboardUrl));
 
     Task<ComposedEmail> IEmailComposer.AllRespondedAsync(SchedulingEvent ev, string dashboardUrl) =>
         Task.FromResult(AllResponded(ev, dashboardUrl));
@@ -217,6 +227,23 @@ public sealed class PlainTextEmailComposer(string mcpUrl, IUnsubscribeLinks? uns
     public static string AddressVerificationSubject(string email) => $"Confirm {email} for the scheduling server";
 
     public static string OrganizerName(SchedulingEvent ev) => ev.OrganizerName ?? ev.OrganizerEmail;
+
+    public static string ParticipantName(Participant participant) => participant.DisplayName ?? participant.Email;
+
+    public static string CancelledSubject(SchedulingEvent ev, bool meetingWasSet) =>
+        meetingWasSet ? $"Cancelled: {ev.Title}" : $"Invitation withdrawn: {ev.Title}";
+
+    public static string CancelledIntro(SchedulingEvent ev, bool meetingWasSet) => meetingWasSet
+        ? $"{OrganizerName(ev)} has cancelled this meeting. It won't take place."
+        : $"{OrganizerName(ev)} has withdrawn this invitation. No time will be picked, so there's nothing left to vote on.";
+
+    public static string CantMakeAnyTimeIntro(SchedulingEvent ev, Participant who) =>
+        $"{ParticipantName(who)} ({who.Email}) is required for \"{ev.Title}\" and answered no to every proposed time, " +
+        "so none of the current times can work.";
+
+    public static string CantMakeAnyTimeClosing(SchedulingEvent ev, Participant who) =>
+        (who.Note is null ? "" : "They left you a note; read it on the event page. ") +
+        $"To keep going, propose more times, or ask your assistant to propose more times for scheduling event {ev.ShortCode}.";
 
     public static string NewSlotsIntro(SchedulingEvent ev, bool rescheduling) => rescheduling
         ? $"{OrganizerName(ev)} needs to reschedule and has proposed new times."

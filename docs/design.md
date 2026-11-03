@@ -472,12 +472,12 @@ meant for the caller come back as tool errors with a specific message.
 | `create_event` | Allowlisted organizer | open-world | Validates (title ≤ 120, duration 5–480 min, 1–20 slots, ≤ 50 participants, slots in the future and distinct, respond-by in the future), opens the event, queues one invitation per participant. Returns the event with `id` and `shortCode`. |
 | `list_my_events` | Anyone signed in | read-only | Filter `needs_my_vote` (default), `organizing` or `all`. |
 | `get_event` | Organizer or participant | read-only | Slots with totals and the caller's own votes; for the organizer, each participant's votes and the ranking. Optional `timeZone` adds viewer-local times. |
-| `vote` | Participant | idempotent | Upserts answers (`preferred`, `yes`, `if_necessary`, `no`) for one or more slots, plus an optional note (≤ 280). Emails the organizer once every required participant has responded. |
+| `vote` | Participant | idempotent | Upserts answers (`preferred`, `yes`, `if_necessary`, `no`) for one or more slots, plus an optional note (≤ 280). Emails the organizer once every required participant has responded, and right away when a required participant's answers become no on every current time. |
 | `propose_more_slots` | Organizer | open-world | Adds a round of slots. Reopens an expired or finalized event (rescheduling). Emails participants about the new slots. Needs `version`. |
 | `withdraw_slot` | Organizer | destructive, idempotent | Removes a slot that no longer works for the organizer and deletes its votes. No email. Needs `version`. |
 | `finalize_event` | Organizer | open-world | Picks the slot, emails everyone, returns `localStart`, `timeZone`, `durationMinutes`, `attendeeEmails` for creating the calendar event. Needs `version`. The agent should re-check the organizer's calendar first. |
 | `resend_invitations` | Organizer | open-world | While the event is open, emails the invitation again (same personal voting link, current times) to the listed participants, or to everyone invited if none are listed. An address that isn't invited is refused; anyone unsubscribed, bounced, or sent the invitation within `Scheduler:InvitationResendCooldownMinutes` (60) is skipped with a notice. Returns `resent`, the addresses it went to. |
-| `cancel_event` | Organizer | destructive, open-world | Cancels; emails everyone who was invited, with the optional reason. |
+| `cancel_event` | Organizer | destructive, open-world | Cancels; emails everyone who was invited, quoting the organizer's reason (required, ≤ 280). Before a time is picked the email says the invitation was withdrawn; after, that the meeting is cancelled. |
 | `record_calendar_event` | Organizer | idempotent | Stores the iCalendar UID of the meeting the agent created, after finalizing. |
 | `get_my_access` | Anyone signed in | read-only | The caller's verified addresses, whether they may organize or administer, and their waiting (or recently declined) request to organize. |
 | `request_to_organize` | Anyone signed in who can't organize | idempotent | Asks the admins to let one of the caller's addresses organize, with an optional checked note. See [Requests to organize](#requests-to-organize). |
@@ -564,9 +564,10 @@ Outbound only. Nothing parses inbound mail.
 | New times | Participants | `propose_more_slots` |
 | Reminder | Participants who haven't answered every slot | Once per deadline, about 24 h before respond-by; lists only the unanswered times |
 | Everyone has responded | Organizer | Last required participant votes |
+| Can't make any time | Organizer | A vote leaves a required participant with no on every current time (again after new times, if they say no to those too). Points to the event page for any note rather than quoting it |
 | Deadline passed | Organizer | Event expires (voting closed; proposing more times reopens it) |
 | It's set | Everyone | Finalized |
-| Cancelled | Everyone invited | Cancelled |
+| Invitation withdrawn / Cancelled | Everyone invited | Cancelled, with the organizer's required reason; "withdrawn" while voting (open or expired), "cancelled" once a time was set |
 | Delivery problem | Organizer | The relay refuses a participant's address (an SMTP 5xx); once per address |
 | Confirm an address | The address | Someone asks to add it to their account |
 | Sign-in link | The address | Someone signing in asks for a link to an address the provider didn't verify |

@@ -23,7 +23,14 @@ public interface IEmailComposer
 
     Task<ComposedEmail> FinalizedAsync(SchedulingEvent ev, Participant recipient, ProposedSlot slot);
 
-    Task<ComposedEmail> CancelledAsync(SchedulingEvent ev, Participant recipient, string? reason);
+    /// <summary>
+    /// To each participant: the organizer called it off, with their reason. <paramref name="meetingWasSet"/> says
+    /// whether a time had been picked (a cancelled meeting) or voting was still going (a withdrawn invitation).
+    /// </summary>
+    Task<ComposedEmail> CancelledAsync(SchedulingEvent ev, Participant recipient, string reason, bool meetingWasSet);
+
+    /// <summary>To the organizer: required participant <paramref name="who"/> answered no to every proposed time.</summary>
+    Task<ComposedEmail> CantMakeAnyTimeAsync(SchedulingEvent ev, Participant who, string dashboardUrl);
 
     /// <summary>To the organizer: every required participant has answered every slot.</summary>
     Task<ComposedEmail> AllRespondedAsync(SchedulingEvent ev, string dashboardUrl);

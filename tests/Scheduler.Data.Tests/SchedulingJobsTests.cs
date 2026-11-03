@@ -170,7 +170,7 @@ public sealed class SchedulingJobsTests
     {
         var ev = await _h.CreateAsync();
         await _h.VoteAsync(Harness.Bob, ev, (0, VoteValue.Preferred));
-        await _h.Service.CancelAsync(Harness.Rocky, ev.ShortCode, null, None);
+        await _h.Service.CancelAsync(Harness.Rocky, ev.ShortCode, "Not needed", None);
 
         CollectionAssert.AreEqual(new[] { ev.Id, ev.Id, ev.Id }, _h.Changes.Published.ToArray());
     }

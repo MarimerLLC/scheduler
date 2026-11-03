@@ -76,6 +76,63 @@ public sealed class VotingTests
     }
 
     [TestMethod]
+    public async Task TheOrganizerHearsRightAwayWhenARequiredPersonCantMakeAnyTime()
+    {
+        var ev = await _h.CreateAsync();
+
+        await _h.VoteAsync(Harness.Bob, ev, (0, VoteValue.No), (1, VoteValue.No));
+        Assert.IsEmpty(CantMakeIt(await _h.OutboxAsync()), "a time is still unanswered");
+
+        await _h.VoteAsync(Harness.Bob, ev, (2, VoteValue.No));
+
+        var toRocky = CantMakeIt(await _h.OutboxAsync());
+        Assert.HasCount(1, toRocky);
+        Assert.AreEqual("rocky@example.com", toRocky[0].To);
+        Assert.AreEqual($"[sched:{ev.ShortCode}] Bob can't make any time: Planning", toRocky[0].Subject);
+        Assert.IsNull(toRocky[0].ReplyTo);
+        StringAssert.Contains(toRocky[0].TextBody, $"{Harness.BaseUrl}/events/{ev.Id}");
+    }
+
+    [TestMethod]
+    public async Task SayingNoToEveryTimeAgainDoesntEmailTheOrganizerAgain()
+    {
+        var ev = await _h.CreateAsync();
+        var allNo = new[] { (0, VoteValue.No), (1, VoteValue.No), (2, VoteValue.No) };
+
+        await _h.VoteAsync(Harness.Bob, ev, allNo);
+        await _h.VoteAsync(Harness.Bob, ev, allNo);
+
+        Assert.HasCount(1, CantMakeIt(await _h.OutboxAsync()));
+    }
+
+    [TestMethod]
+    public async Task SayingNoToNewTimesTooEmailsTheOrganizerAgain()
+    {
+        var ev = await _h.CreateAsync();
+        await _h.VoteAsync(Harness.Bob, ev, (0, VoteValue.No), (1, VoteValue.No), (2, VoteValue.No));
+
+        var more = await _h.Service.ProposeMoreSlotsAsync(Harness.Rocky, ev.ShortCode,
+            [new("2026-11-06T14:00", "America/Chicago")], null, ev.Version, CancellationToken.None);
+        await _h.VoteAsync(Harness.Bob, more, (3, VoteValue.No));
+
+        Assert.HasCount(2, CantMakeIt(await _h.OutboxAsync()));
+    }
+
+    [TestMethod]
+    public async Task OptionalPeopleAndAnyWorkableTimeDontTriggerTheWarning()
+    {
+        var ev = await _h.CreateAsync();
+
+        await _h.VoteAsync(Harness.Dave, ev, (0, VoteValue.No), (1, VoteValue.No), (2, VoteValue.No));
+        await _h.VoteAsync(Harness.Carol, ev, (0, VoteValue.No), (1, VoteValue.IfNecessary), (2, VoteValue.No));
+
+        Assert.IsEmpty(CantMakeIt(await _h.OutboxAsync()));
+    }
+
+    private static List<OutboxEmail> CantMakeIt(IEnumerable<OutboxEmail> outbox) =>
+        outbox.Where(o => o.Subject.Contains("can't make any time", StringComparison.Ordinal)).ToList();
+
+    [TestMethod]
     public async Task UnknownAndRepeatedSlotsAreRejected()
     {
         var ev = await _h.CreateAsync();

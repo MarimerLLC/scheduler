@@ -130,10 +130,10 @@ public sealed class SchedulingTools(ISchedulingService scheduling, IAdminService
         Run(caller => scheduling.ResendInvitationsAsync(caller, eventId, emails, cancellationToken));
 
     [McpServerTool(Name = "cancel_event", Title = "Cancel scheduling event", ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = true)]
-    [Description("Organizer only: calls the meeting off and emails everyone.")]
+    [Description("Organizer only: calls the meeting off and emails everyone invited, with the organizer's reason. While voting is still going, the email says the invitation was withdrawn; after finalize_event, it says the meeting is cancelled. Ask the organizer for the reason and confirm before calling.")]
     public Task<string> CancelEvent(
         [Description("The event's id or shortCode.")] string eventId,
-        [Description("Optional short reason included in the email.")] string? reason = null,
+        [Description("Required: the organizer's short reason for cancelling, quoted in the email to everyone invited.")] string reason,
         CancellationToken cancellationToken = default) =>
         Run(caller => scheduling.CancelAsync(caller, eventId, reason, cancellationToken));
 
