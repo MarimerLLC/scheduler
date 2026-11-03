@@ -143,7 +143,9 @@ button.danger { color: var(--danger); border-color: var(--danger); }
     line-height: 1;
 }
 .notice-error .notice-icon { background: var(--danger); }
-.notice-text { flex: 1; overflow-wrap: anywhere; }
+/* Bounded, because a notice can be long (resending to everyone during the cooldown explains each person) and a
+   sticky one must never cover the page: past the limit its text scrolls inside it. */
+.notice-text { flex: 1; min-width: 0; overflow-wrap: anywhere; max-height: min(35vh, 14rem); overflow-y: auto; overscroll-behavior: contain; }
 .notice-dismiss { flex: none; padding: 0 0.45rem; border: none; background: transparent; font-size: 1.25rem; line-height: 1.4rem; color: var(--muted); }
 .notice-dismiss[hidden] { display: none; }
 @keyframes notice-in { from { opacity: 0; transform: translateY(-0.4rem); } }
