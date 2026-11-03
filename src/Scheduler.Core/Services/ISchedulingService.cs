@@ -24,7 +24,10 @@ public interface ISchedulingService
 
     /// <summary>Records or overwrites the caller's votes. Safe to retry.</summary>
     /// <param name="note">Note to the organizer: null leaves it unchanged, empty clears it.</param>
-    Task<EventView> VoteAsync(CallerIdentity caller, string eventRef, IReadOnlyList<VoteInput> votes, string? note, CancellationToken cancellationToken);
+    /// <param name="emailReceipt">
+    /// Email the caller a copy of their answer to every current time, to each of their invited addresses.
+    /// </param>
+    Task<EventView> VoteAsync(CallerIdentity caller, string eventRef, IReadOnlyList<VoteInput> votes, string? note, bool emailReceipt, CancellationToken cancellationToken);
 
     /// <summary>
     /// Adds a round of slots and emails participants about them. Reopens an expired or finalized event

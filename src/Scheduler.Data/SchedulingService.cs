@@ -153,7 +153,7 @@ public sealed class SchedulingService(
         return ToView(ev, caller, account, zone, notices: null);
     }
 
-    public async Task<EventView> VoteAsync(CallerIdentity caller, string eventRef, IReadOnlyList<VoteInput> votes, string? note, CancellationToken cancellationToken)
+    public async Task<EventView> VoteAsync(CallerIdentity caller, string eventRef, IReadOnlyList<VoteInput> votes, string? note, bool emailReceipt, CancellationToken cancellationToken)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
         var now = clock.GetCurrentInstant();
@@ -206,7 +206,12 @@ public sealed class SchedulingService(
             UpdateResponded(ev, participant, now);
         }
 
-        Audit(db, ev, caller, "vote.cast", new { slots = votes.Count }, now);
+        Audit(db, ev, caller, "vote.cast", new { slots = votes.Count, receipt = emailReceipt }, now);
+        if (emailReceipt)
+        {
+            foreach (var participant in access.Me)
+                QueueEmail(db, ev, participant.Email, await composer.VoteReceiptAsync(ev, participant, VotingUrl(ev, participant)), now);
+        }
         foreach (var participant in access.Me.Where(p => !alreadyRuledOutEveryTime.Contains(p) && ev.RulesOutEveryTime(p)))
             QueueEmail(db, ev, ev.OrganizerEmail, await composer.CantMakeAnyTimeAsync(ev, participant, DashboardUrl(ev)), now, replyToOrganizer: false);
         if (!everyoneHadResponded && EveryoneResponded(ev))

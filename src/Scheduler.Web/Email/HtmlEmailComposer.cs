@@ -42,6 +42,18 @@ internal sealed class HtmlEmailComposer(
             [nameof(EventEmail.McpUrl)] = text.McpUrl,
         });
 
+    public Task<ComposedEmail> VoteReceiptAsync(SchedulingEvent ev, Participant recipient, string votingUrl) =>
+        WithEventHtmlAsync(text.VoteReceipt(ev, recipient, votingUrl), recipient.Email, ev, new()
+        {
+            [nameof(EventEmail.Intro)] = PlainTextEmailComposer.VoteReceiptIntro(ev),
+            [nameof(EventEmail.Answers)] = PlainTextEmailComposer.Answers(ev, recipient),
+            [nameof(EventEmail.Note)] = recipient.Note,
+            [nameof(EventEmail.Closing)] = PlainTextEmailComposer.VoteReceiptClosing,
+            [nameof(EventEmail.ActionUrl)] = votingUrl,
+            [nameof(EventEmail.ActionLabel)] = "Change my answers",
+            [nameof(EventEmail.ActionNote)] = PersonalLink,
+        });
+
     public Task<ComposedEmail> FinalizedAsync(SchedulingEvent ev, Participant recipient, ProposedSlot slot) =>
         WithEventHtmlAsync(text.Finalized(ev, recipient, slot), recipient.Email, ev, new()
         {

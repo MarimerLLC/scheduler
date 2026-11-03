@@ -197,6 +197,7 @@ a.button {
 .vote-form .tally { margin: 0.25rem 0 0; font-size: 0.875rem; }
 .vote-form .note { display: flex; flex-direction: column; gap: 0.25rem; }
 .vote-form textarea { font: inherit; padding: 0.4rem; }
+.vote-form .receipt { display: flex; align-items: center; gap: 0.35rem; padding: 0.35rem 0; }
 .vote-form button[type=submit] { align-self: flex-start; }
 .slot-totals { padding-left: 1.25rem; }
 .slot-totals time { color: var(--muted); margin: 0 0.5rem; }

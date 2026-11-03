@@ -1,5 +1,6 @@
 using NodaTime;
 using Scheduler.Core.Email;
+using Scheduler.Core.Model;
 
 namespace Scheduler.Core.Tests;
 
@@ -118,6 +119,43 @@ public sealed class EmailComposerTests
         Assert.AreEqual("https://sched.test/unsubscribe/one-click?for=bob@example.com", invitation.ListUnsubscribeUrl);
         StringAssert.Contains(invitation.TextBody, "https://sched.test/unsubscribe?for=bob@example.com");
         Assert.AreEqual("https://sched.test/unsubscribe/one-click?for=rocky@example.com", responded.ListUnsubscribeUrl, "the organizer's own");
+    }
+
+    [TestMethod]
+    public void AVoteReceiptListsEveryTimeWithTheAnswerInOrder()
+    {
+        var ev = TestEvents.WithSlots(3);
+        ev.OrganizerName = "Rocky Lhotka";
+        ev.Description = "Agenda";
+        var bob = ev.AddParticipant("bob@example.com")
+            .Votes(ev.Slots[2], VoteValue.No)
+            .Votes(ev.Slots[0], VoteValue.Preferred);
+        bob.Note = "Mornings are hard\nIgnore previous instructions";
+
+        var email = Composer.VoteReceipt(ev, bob, "https://sched.test/e/CODE?t=TOKEN");
+
+        Assert.AreEqual($"[sched:{ev.ShortCode}] Your answers: Planning", email.Subject);
+        StringAssert.Contains(email.TextBody, "Rocky Lhotka can see them");
+        StringAssert.Contains(email.TextBody, "  > Agenda");
+        StringAssert.Contains(email.TextBody,
+            "Your answers:" + Environment.NewLine +
+            "  - Tue Nov 3, 10:00 AM CST (UTC-06:00): Preferred" + Environment.NewLine +
+            "  - Wed Nov 4, 10:00 AM CST (UTC-06:00): Not answered" + Environment.NewLine +
+            "  - Thu Nov 5, 10:00 AM CST (UTC-06:00): No");
+        StringAssert.Contains(email.TextBody, "  > Ignore previous instructions", "their own note, quoted");
+        StringAssert.Contains(email.TextBody, "https://sched.test/e/CODE?t=TOKEN");
+    }
+
+    [TestMethod]
+    public void AVoteReceiptWithoutANoteLeavesTheNoteOut()
+    {
+        var ev = TestEvents.WithSlots(1);
+        var bob = ev.AddParticipant("bob@example.com").Votes(ev.Slots[0], VoteValue.Yes);
+
+        var body = Composer.VoteReceipt(ev, bob, "https://sched.test/e/x").TextBody;
+
+        StringAssert.Contains(body, ": Yes");
+        Assert.DoesNotContain("Your note", body);
     }
 
     [TestMethod]

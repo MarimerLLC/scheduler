@@ -34,6 +34,27 @@ public sealed class PlainTextEmailComposer(string mcpUrl, IUnsubscribeLinks? uns
         return EventEmail(recipient.Email, Subject(ev, $"New times for: {ev.Title}{Deadline(ev)}"), body);
     }
 
+    public ComposedEmail VoteReceipt(SchedulingEvent ev, Participant recipient, string votingUrl)
+    {
+        var body = new StringBuilder();
+        body.AppendLine(VoteReceiptIntro(ev));
+        AppendEvent(body, ev);
+        body.AppendLine("Your answers:");
+        foreach (var (slot, answer) in Answers(ev, recipient))
+            body.AppendLine($"  - {SlotTimeFormatter.Display(slot.Start, ev.OrganizerTimeZone)}: {answer}");
+        body.AppendLine();
+        if (recipient.Note is not null)
+        {
+            body.AppendLine("Your note to the organizer:");
+            foreach (var line in recipient.Note.Split('\n'))
+                body.AppendLine($"  > {line.TrimEnd()}");
+            body.AppendLine();
+        }
+        body.AppendLine(VoteReceiptClosing);
+        body.AppendLine($"Change your answers here (this link is personal to you): {votingUrl}");
+        return EventEmail(recipient.Email, Subject(ev, $"Your answers: {ev.Title}"), body);
+    }
+
     public ComposedEmail Finalized(SchedulingEvent ev, Participant recipient, ProposedSlot slot)
     {
         var body = new StringBuilder();
@@ -162,6 +183,9 @@ public sealed class PlainTextEmailComposer(string mcpUrl, IUnsubscribeLinks? uns
     Task<ComposedEmail> IEmailComposer.NewSlotsAsync(SchedulingEvent ev, Participant recipient, string votingUrl, IReadOnlyList<ProposedSlot> newSlots, bool rescheduling) =>
         Task.FromResult(NewSlots(ev, recipient, votingUrl, newSlots, rescheduling));
 
+    Task<ComposedEmail> IEmailComposer.VoteReceiptAsync(SchedulingEvent ev, Participant recipient, string votingUrl) =>
+        Task.FromResult(VoteReceipt(ev, recipient, votingUrl));
+
     Task<ComposedEmail> IEmailComposer.FinalizedAsync(SchedulingEvent ev, Participant recipient, ProposedSlot slot) =>
         Task.FromResult(Finalized(ev, recipient, slot));
 
@@ -219,6 +243,28 @@ public sealed class PlainTextEmailComposer(string mcpUrl, IUnsubscribeLinks? uns
     public static string OrganizerRequestDeclinedText(string email, string canAskAgainAt) =>
         $"An admin declined the request for {email} to create scheduling events. You can still vote on any meeting " +
         $"you're invited to. If you think this was a mistake, you can ask again from {canAskAgainAt}.";
+
+    public static string VoteReceiptIntro(SchedulingEvent ev) =>
+        $"Thanks, your answers about a meeting time are saved and {OrganizerName(ev)} can see them. Here they are for your records.";
+
+    public const string VoteReceiptClosing = "You can change your answers until the organizer picks a time.";
+
+    /// <summary>The label for an answer, as on the voting page; null is a time not answered yet.</summary>
+    public static string VoteLabel(VoteValue? vote) => vote switch
+    {
+        VoteValue.Preferred => "Preferred",
+        VoteValue.Yes => "Yes",
+        VoteValue.IfNecessary => "If necessary",
+        VoteValue.No => "No",
+        _ => "Not answered",
+    };
+
+    /// <summary>Each active slot, earliest first, with the participant's answer to it.</summary>
+    public static IReadOnlyList<(ProposedSlot Slot, string Answer)> Answers(SchedulingEvent ev, Participant participant) =>
+        ev.ActiveSlots
+            .OrderBy(s => s.Start)
+            .Select(s => (s, VoteLabel(participant.Votes.FirstOrDefault(v => v.SlotId == s.Id)?.Value)))
+            .ToList();
 
     public const string FinalizedClosing = "A calendar invitation will come from the organizer's calendar. Accept or decline it there.";
 

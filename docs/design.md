@@ -475,7 +475,7 @@ meant for the caller come back as tool errors with a specific message.
 | `create_event` | Allowlisted organizer | open-world | Validates (title ≤ 120, duration 5–480 min, 1–20 slots, ≤ 50 participants, slots in the future and distinct, respond-by in the future), opens the event, queues one invitation per participant. Returns the event with `id` and `shortCode`. A client that supports MRTR is asked for a missing title, time zone, invite list or candidate times, and offered once to add a description when the title is short. |
 | `list_my_events` | Anyone signed in | read-only | Filter `needs_my_vote` (default), `organizing` or `all`. |
 | `get_event` | Organizer or participant | read-only | Slots with totals and the caller's own votes; for the organizer, each participant's votes and the ranking. Optional `timeZone` adds viewer-local times. |
-| `vote` | Participant | idempotent | Upserts answers (`preferred`, `yes`, `if_necessary`, `no`) for one or more slots, plus an optional note (≤ 280). Emails the organizer once every required participant has responded, and right away when a required participant's answers become no on every current time. |
+| `vote` | Participant | idempotent | Upserts answers (`preferred`, `yes`, `if_necessary`, `no`) for one or more slots, plus an optional note (≤ 280). With `emailReceipt`, emails the voter a copy of their answers (only when the user asks for one). Emails the organizer once every required participant has responded, and right away when a required participant's answers become no on every current time. |
 | `propose_more_slots` | Organizer | open-world | Adds a round of slots. Reopens an expired or finalized event (rescheduling). Emails participants about the new slots. Needs `version`. |
 | `withdraw_slot` | Organizer | destructive, idempotent | Removes a slot that no longer works for the organizer and deletes its votes. No email. Needs `version`. |
 | `finalize_event` | Organizer | open-world | Picks the slot, emails everyone, returns `localStart`, `timeZone`, `durationMinutes`, `attendeeEmails` for creating the calendar event. Needs `version`. The agent should re-check the organizer's calendar first. |
@@ -658,8 +658,13 @@ scrolls, so it is seen even when the button was far down the page, and stays unt
 times out. Each outcome is a new `Notice`, so doing the same thing twice shows the notice arriving again. On the
 voting page it comes before the organizer's details, which can be long. Static pages render the close button hidden
 and `app.js` shows and handles it, so without JavaScript there is no close button. Whole-page outcomes that replace
-the form (signed in, unsubscribed, address confirmed) stay as the page's own text. Optional email confirmation of a
-saved vote is a separate question (issue 40).
+the form (signed in, unsubscribed, address confirmed) stay as the page's own text.
+
+**A copy of my answers.** Under the note, the voting page has an "Email me a copy of my answers" checkbox, off each
+time the page loads, so a person who wants a record for later asks for one with that save
+([#40](https://github.com/MarimerLLC/scheduler/issues/40)). It is opt-in rather than sent on every save because
+the notice already says the save worked, people often save several times while deciding, and the relay's daily
+limit is small. The `vote` tool has the same option (`emailReceipt`), for when the user asks their agent for a copy.
 
 ## Email
 
@@ -675,6 +680,7 @@ Outbound only. Nothing parses inbound mail.
 | Everyone has responded | Organizer | Last required participant votes |
 | Can't make any time | Organizer | A vote leaves a required participant with no on every current time (again after new times, if they say no to those too). Points to the event page for any note rather than quoting it |
 | Deadline passed | Organizer | Event expires (voting closed; proposing more times reopens it) |
+| Your answers | The voter, at each of their invited addresses | A vote saved with "email me a copy" (`emailReceipt`): the event, the voter's answer to every current time (or "Not answered"), their note, and their voting link to change them |
 | It's set | Everyone | Finalized |
 | Invitation withdrawn / Cancelled | Everyone invited | Cancelled, with the organizer's required reason; "withdrawn" while voting (open or expired), "cancelled" once a time was set |
 | Delivery problem | Organizer | The relay refuses a participant's address (an SMTP 5xx); once per address |
@@ -888,7 +894,7 @@ which has that person's mail and calendar tools.
 
 ## Audit log
 
-`AuditEntry` rows record actions such as `event.created`, `vote.cast`, `slot.withdrawn`,
+`AuditEntry` rows record actions such as `event.created`, `vote.cast` (with whether a copy was emailed), `slot.withdrawn`,
 `event.finalized`, `email.bounced`, with the actor's address (or none, for the system) and the channel
 (`mcp`, `web`, `email`, `system`). Useful for "why was this finalized?" and for debugging agent behavior.
 Purged with the event. Admin actions (`organizer.added`, `organizer.removed`, `organizer.requested`, `organizer.request.approved`, `organizer.request.declined`), token changes
