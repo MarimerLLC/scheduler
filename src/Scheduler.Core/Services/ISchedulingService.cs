@@ -25,7 +25,9 @@ public interface ISchedulingService
     /// <summary>Records or overwrites the caller's votes. Safe to retry.</summary>
     /// <param name="note">Note to the organizer: null leaves it unchanged, empty clears it.</param>
     /// <param name="emailReceipt">
-    /// Email the caller a copy of their answer to every current time, to each of their invited addresses.
+    /// Email the caller a copy of their answer to every current time, to each of their invited addresses. Not to an
+    /// address that is unsubscribed or bounced, and not again when the vote changes nothing and the same copy went
+    /// out minutes ago, so a retry stays safe. The result's notices say where a copy went, or why it didn't.
     /// </param>
     Task<EventView> VoteAsync(CallerIdentity caller, string eventRef, IReadOnlyList<VoteInput> votes, string? note, bool emailReceipt, CancellationToken cancellationToken);
 

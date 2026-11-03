@@ -91,7 +91,7 @@ public sealed class SchedulingTools(ISchedulingService scheduling, IAdminService
         [Description("The event's id or shortCode.")] string eventId,
         [Description("One entry per slot answered.")] McpVote[] votes,
         [Description("Optional short note to the organizer, at most 280 characters.")] string? note = null,
-        [Description("True to email the user a copy of their answers. Only when the user asks for one.")] bool emailReceipt = false,
+        [Description("True to email the user a copy of their answers. Only when the user asks for one. A retry that changes nothing doesn't send a second copy; the result's notices say where the copy went.")] bool emailReceipt = false,
         CancellationToken cancellationToken = default) =>
         Run(caller => scheduling.VoteAsync(
             caller,

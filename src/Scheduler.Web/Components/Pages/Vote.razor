@@ -215,9 +215,9 @@ else if (_event is not null)
         try
         {
             _event = await Scheduling.VoteAsync(_caller, Code, votes, form["note"].ToString(), emailReceipt, CancellationToken.None);
-            _notice = Notice.Success(emailReceipt
-                ? "Thanks, your answers are saved, and a copy is on its way to your email. You can change them here until the organizer picks a time."
-                : "Thanks, your answers are saved. You can change them here until the organizer picks a time.");
+            // With a copy asked for, the notices say where it went or why it didn't (unsubscribed, a retry).
+            _notice = Notice.Success(string.Join(" ",
+                ["Thanks, your answers are saved.", .. _event.Notices ?? [], "You can change them here until the organizer picks a time."]));
         }
         catch (SchedulingException ex)
         {

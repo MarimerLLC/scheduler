@@ -96,7 +96,7 @@ public sealed partial class VotingPageTests
             (SlotField(ev.Slots[0].SlotId), "preferred"),
             (SlotField(ev.Slots[1].SlotId), "if_necessary"),
             ("receipt", "on"));
-        StringAssert.Contains(await TextOf(response), "a copy is on its way to your email");
+        StringAssert.Contains(await TextOf(response), "Thanks, your answers are saved. A copy of your answers is on its way to bob@example.com.");
 
         var receipt = (await _app.OutboxAsync()).Single(o => o.Subject.Contains("Your answers", StringComparison.Ordinal));
         Assert.AreEqual("bob@example.com", receipt.To);
