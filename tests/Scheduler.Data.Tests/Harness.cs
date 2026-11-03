@@ -108,7 +108,7 @@ internal sealed class Harness
         Service.CreateEventAsync(Rocky, request ?? Request(), CancellationToken.None);
 
     public Task<EventView> VoteAsync(CallerIdentity caller, EventView ev, params (int Slot, VoteValue Value)[] votes) =>
-        Service.VoteAsync(caller, ev.ShortCode, votes.Select(v => new VoteInput(ev.Slots[v.Slot].SlotId, v.Value)).ToList(), null, CancellationToken.None);
+        Service.VoteAsync(caller, ev.ShortCode, votes.Select(v => new VoteInput(ev.Slots[v.Slot].SlotId, v.Value)).ToList(), null, emailReceipt: false, CancellationToken.None);
 
     public Task<EventView> GetAsync(CallerIdentity caller, EventView ev) =>
         Service.GetEventAsync(caller, ev.Id.ToString(), null, CancellationToken.None);

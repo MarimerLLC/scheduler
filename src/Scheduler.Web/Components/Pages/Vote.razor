@@ -102,6 +102,11 @@ else if (_event is not null)
                 <textarea name="note" maxlength="@FieldLimits.NoteMax" rows="3">@MyNote</textarea>
             </label>
 
+            <label class="receipt">
+                <input type="checkbox" name="receipt" />
+                Email me a copy of my answers
+            </label>
+
             <button type="submit">Save my answers</button>
         </form>
     }
@@ -194,6 +199,7 @@ else if (_event is not null)
             return;
 
         var form = HttpContext.Request.Form;
+        var emailReceipt = form["receipt"] == "on";
         var votes = new List<VoteInput>();
         foreach (var slot in _event.Slots)
         {
@@ -208,8 +214,10 @@ else if (_event is not null)
 
         try
         {
-            _event = await Scheduling.VoteAsync(_caller, Code, votes, form["note"].ToString(), CancellationToken.None);
-            _notice = Notice.Success("Thanks, your answers are saved. You can change them here until the organizer picks a time.");
+            _event = await Scheduling.VoteAsync(_caller, Code, votes, form["note"].ToString(), emailReceipt, CancellationToken.None);
+            // With a copy asked for, the notices say where it went or why it didn't (unsubscribed, a retry).
+            _notice = Notice.Success(string.Join(" ",
+                ["Thanks, your answers are saved.", .. _event.Notices ?? [], "You can change them here until the organizer picks a time."]));
         }
         catch (SchedulingException ex)
         {

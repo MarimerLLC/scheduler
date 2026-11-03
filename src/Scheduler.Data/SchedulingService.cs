@@ -28,6 +28,9 @@ public sealed class SchedulingService(
     private const int CalendarUidMax = 512;
     private const int ListLimit = 100;
 
+    /// <summary>A vote that changes nothing doesn't email another copy of the answers within this long of the last.</summary>
+    private static readonly Duration ReceiptRepeatWindow = Duration.FromMinutes(10);
+
     private SchedulingOptions Options => options.Value;
 
     public async Task<EventView> CreateEventAsync(CallerIdentity caller, CreateEventRequest request, CancellationToken cancellationToken)
@@ -153,7 +156,7 @@ public sealed class SchedulingService(
         return ToView(ev, caller, account, zone, notices: null);
     }
 
-    public async Task<EventView> VoteAsync(CallerIdentity caller, string eventRef, IReadOnlyList<VoteInput> votes, string? note, CancellationToken cancellationToken)
+    public async Task<EventView> VoteAsync(CallerIdentity caller, string eventRef, IReadOnlyList<VoteInput> votes, string? note, bool emailReceipt, CancellationToken cancellationToken)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
         var now = clock.GetCurrentInstant();
@@ -184,6 +187,7 @@ public sealed class SchedulingService(
         var noteText = note is null ? null : OptionalText(note, FieldLimits.NoteMax, "note");
         var everyoneHadResponded = EveryoneResponded(ev);
         var alreadyRuledOutEveryTime = access.Me.Where(ev.RulesOutEveryTime).ToHashSet();
+        var changed = new HashSet<Participant>();
 
         foreach (var participant in access.Me)
         {
@@ -195,25 +199,76 @@ public sealed class SchedulingService(
                     existing = new Vote { ParticipantId = participant.Id, SlotId = input.SlotId };
                     participant.Votes.Add(existing);
                     db.Votes.Add(existing);
+                    changed.Add(participant);
+                }
+                else if (existing.Value != input.Value)
+                {
+                    changed.Add(participant);
                 }
                 existing.Value = input.Value;
                 existing.UpdatedAt = now;
                 existing.Channel = caller.Channel;
             }
 
-            if (note is not null)
+            if (note is not null && participant.Note != noteText)
+            {
                 participant.Note = noteText;
+                changed.Add(participant);
+            }
             UpdateResponded(ev, participant, now);
         }
 
-        Audit(db, ev, caller, "vote.cast", new { slots = votes.Count }, now);
+        List<string>? notices = null;
+        var receipts = new List<string>();
+        if (emailReceipt)
+        {
+            notices = [];
+            foreach (var participant in access.Me)
+            {
+                if (await QueueVoteReceiptAsync(db, ev, participant, unchanged: !changed.Contains(participant), now, cancellationToken) is { } skipped)
+                    notices.Add(skipped);
+                else
+                {
+                    receipts.Add(participant.Email);
+                    notices.Add($"A copy of your answers is on its way to {participant.Email}.");
+                }
+            }
+        }
+
+        Audit(db, ev, caller, "vote.cast", new { slots = votes.Count, receipt = receipts }, now);
         foreach (var participant in access.Me.Where(p => !alreadyRuledOutEveryTime.Contains(p) && ev.RulesOutEveryTime(p)))
             QueueEmail(db, ev, ev.OrganizerEmail, await composer.CantMakeAnyTimeAsync(ev, participant, DashboardUrl(ev)), now, replyToOrganizer: false);
         if (!everyoneHadResponded && EveryoneResponded(ev))
             QueueEmail(db, ev, ev.OrganizerEmail, await composer.AllRespondedAsync(ev, DashboardUrl(ev)), now, replyToOrganizer: false);
 
         await SaveAsync(db, ev, cancellationToken);
-        return ToView(ev, caller, account, viewerTimeZone: null, notices: null);
+        return ToView(ev, caller, account, viewerTimeZone: null, notices);
+    }
+
+    /// <summary>
+    /// Queues a copy of <paramref name="participant"/>'s answers, unless the address takes no email from this server, or
+    /// the vote changed nothing and the same copy was queued moments ago (a retry). Returns why it wasn't sent, or null.
+    /// </summary>
+    private async Task<string?> QueueVoteReceiptAsync(SchedulerDbContext db, SchedulingEvent ev, Participant participant, bool unchanged, Instant now, CancellationToken cancellationToken)
+    {
+        var suppression = await db.Suppressions.AsNoTracking().FirstOrDefaultAsync(s => s.Email == participant.Email, cancellationToken);
+        if (suppression is not null)
+        {
+            return suppression.Reason == SuppressionReason.Unsubscribed
+                ? $"{participant.Email} has asked this server not to email it, so no copy of your answers was sent. Your answers are saved."
+                : $"Email to {participant.Email} has bounced before, so no copy of your answers was sent. Your answers are saved.";
+        }
+
+        var receipt = await composer.VoteReceiptAsync(ev, participant, VotingUrl(ev, participant));
+        if (unchanged)
+        {
+            var since = now - ReceiptRepeatWindow;
+            if (await db.Outbox.AnyAsync(o => o.EventId == ev.Id && o.To == participant.Email && o.Subject == receipt.Subject && o.CreatedAt >= since, cancellationToken))
+                return $"A copy of these same answers went to {participant.Email} a few minutes ago, so another wasn't sent.";
+        }
+
+        QueueEmail(db, ev, participant.Email, receipt, now);
+        return null;
     }
 
     public async Task<EventView> ProposeMoreSlotsAsync(CallerIdentity caller, string eventRef, IReadOnlyList<SlotInput> slots, string? respondBy, uint expectedVersion, CancellationToken cancellationToken)

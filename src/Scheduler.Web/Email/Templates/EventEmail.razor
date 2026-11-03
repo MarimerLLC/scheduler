@@ -1,4 +1,5 @@
-@* One email about a scheduling event: invitation, new times, it's set, cancelled, everyone has responded.
+@* One email about a scheduling event: invitation, new times, a copy of someone's answers, it's set, cancelled,
+   everyone has responded.
    The same content as the plain-text body (PlainTextEmailComposer), which agents read. Text the organizer
    wrote (title, description, reason) is shown as quoted data. *@
 
@@ -30,6 +31,23 @@
                 <li>@SlotTimeFormatter.Display(slot.Start, Event.OrganizerTimeZone)</li>
             }
         </ul>
+    }
+
+    @if (Answers is { Count: > 0 })
+    {
+        <p style="margin:0 0 4px;font-weight:600;">Your answers</p>
+        <ul style="margin:0 0 16px;padding-left:20px;">
+            @foreach (var (slot, answer) in Answers)
+            {
+                <li><strong>@answer</strong> for @SlotTimeFormatter.Display(slot.Start, Event.OrganizerTimeZone)</li>
+            }
+        </ul>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(Note))
+    {
+        <p style="margin:0 0 4px;font-size:14px;color:#59636e;">Your note to the organizer:</p>
+        <blockquote style="margin:0 0 16px;padding:0 12px;border-left:3px solid #d0d7de;white-space:pre-line;">@Note</blockquote>
     }
 
     @if (!string.IsNullOrWhiteSpace(Reason))
@@ -70,6 +88,8 @@
     [Parameter] public IReadOnlyList<ProposedSlot>? Slots { get; set; }
     [Parameter] public string SlotsHeading { get; set; } = "Proposed times";
     [Parameter] public ProposedSlot? Chosen { get; set; }
+    [Parameter] public IReadOnlyList<(ProposedSlot Slot, string Answer)>? Answers { get; set; }
+    [Parameter] public string? Note { get; set; }
     [Parameter] public string? Reason { get; set; }
     [Parameter] public string? ActionUrl { get; set; }
     [Parameter] public string? ActionLabel { get; set; }

@@ -80,6 +80,36 @@ public sealed partial class VotingPageTests
     }
 
     [TestMethod]
+    public async Task A_participant_can_ask_for_an_email_copy_of_their_answers()
+    {
+        var ev = await CreateEventAsync();
+        var browser = _app.CreateBrowser();
+        await browser.Http.GetAsync(VotingLinkIn((await _app.OutboxAsync()).Single(o => o.To == "bob@example.com")));
+
+        var html = await TextOf(await browser.Http.GetAsync($"/e/{ev.ShortCode}"));
+        StringAssert.Contains(html, "<input type=\"checkbox\" name=\"receipt\">", "offered, and off until they ask");
+
+        await browser.SubmitFormAsync($"/e/{ev.ShortCode}", (SlotField(ev.Slots[0].SlotId), "yes"));
+        Assert.IsFalse((await _app.OutboxAsync()).Any(o => o.Subject.Contains("Your answers", StringComparison.Ordinal)), "no copy unless asked");
+
+        var response = await browser.SubmitFormAsync($"/e/{ev.ShortCode}",
+            (SlotField(ev.Slots[0].SlotId), "preferred"),
+            (SlotField(ev.Slots[1].SlotId), "if_necessary"),
+            ("receipt", "on"));
+        StringAssert.Contains(await TextOf(response), "Thanks, your answers are saved. A copy of your answers is on its way to bob@example.com.");
+
+        var receipt = (await _app.OutboxAsync()).Single(o => o.Subject.Contains("Your answers", StringComparison.Ordinal));
+        Assert.AreEqual("bob@example.com", receipt.To);
+        StringAssert.Contains(receipt.TextBody, $"{ev.Slots[0].OrganizerLocal}: Preferred");
+        StringAssert.Contains(receipt.TextBody, $"{ev.Slots[1].OrganizerLocal}: If necessary");
+        StringAssert.Contains(receipt.TextBody, $"{ev.Slots[2].OrganizerLocal}: Not answered");
+        Assert.IsNotNull(receipt.HtmlBody);
+        StringAssert.Contains(receipt.HtmlBody, $"<strong>If necessary</strong> for {WebUtility.HtmlEncode(ev.Slots[1].OrganizerLocal)}");
+        StringAssert.Contains(receipt.HtmlBody, WebUtility.HtmlEncode(VotingLinkIn(receipt)));
+        Assert.IsNotNull(receipt.ListUnsubscribeUrl);
+    }
+
+    [TestMethod]
     public async Task Saving_without_an_answer_shows_an_error_notice_and_saves_nothing()
     {
         var ev = await CreateEventAsync();
