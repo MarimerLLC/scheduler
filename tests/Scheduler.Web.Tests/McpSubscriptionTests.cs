@@ -87,16 +87,31 @@ public sealed class McpSubscriptionTests
     }
 
     [TestMethod]
-    public async Task A_stream_with_nothing_readable_ends_after_the_acknowledgement()
+    public async Task A_stream_that_watches_nothing_stays_open_without_taking_a_slot()
     {
         await using var organizer = await ConnectAsync(Organizer);
         await using var bob = await ConnectAsync(Bob);
-        var ev = await CreateAsync(organizer, Carol);
+        var notInvited = await CreateAsync(organizer, Carol);
+        var invited = await CreateAsync(organizer, Bob);
+        var empty = new List<Listener>();
+        var watching = new List<Listener>();
+        try
+        {
+            // Bob can't read the first event, so these watch nothing, like a client that asked only for list_changed.
+            for (var i = 0; i < 6; i++)
+                empty.Add(await Listener.OpenAsync(bob, EventUri(notInvited.ShortCode)));
+            for (var i = 0; i < 5; i++)
+                watching.Add(await Listener.OpenAsync(bob, EventUri(invited.ShortCode)));
+            await Task.Delay(TimeSpan.FromSeconds(1));
 
-        await using var listener = await Listener.OpenAsync(bob, EventUri(ev.ShortCode));
-
-        Assert.IsEmpty(listener.Granted);
-        await listener.Completion.WaitAsync(Patience);
+            Assert.IsTrue(empty.All(l => l.Granted.Length == 0));
+            Assert.IsFalse(empty.Any(l => l.Completion.IsCompleted), "a stream with nothing to watch waits out its lifetime");
+        }
+        finally
+        {
+            foreach (var listener in empty.Concat(watching))
+                await listener.DisposeAsync();
+        }
     }
 
     [TestMethod]
@@ -155,9 +170,11 @@ public sealed class McpSubscriptionTests
         await using var organizer = await ConnectAsync(Organizer);
         var ev = await CreateAsync(organizer);
 
-        await using var listener = await Listener.OpenAsync(organizer, EventUri(ev.ShortCode));
+        await using var watching = await Listener.OpenAsync(organizer, EventUri(ev.ShortCode));
+        await using var empty = await Listener.OpenAsync(organizer);
 
-        Assert.IsNotNull(await listener.Completion.WaitAsync(Patience));
+        Assert.IsNotNull(await watching.Completion.WaitAsync(Patience));
+        Assert.IsNotNull(await empty.Completion.WaitAsync(Patience));
     }
 
     [TestMethod]

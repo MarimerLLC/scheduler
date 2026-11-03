@@ -584,10 +584,14 @@ side, RockBot's MCP bridge, is [MarimerLLC/rockbot#768](https://github.com/Marim
    session channel for unsolicited notifications, but the listen request's own response stream can carry them;
    the SDK documents this handler for that case. The handler:
    - refuses a caller who isn't signed in, and a request for more than `MaxUrisPerStream` (50) URIs;
-   - refuses a caller who already has `MaxStreamsPerCaller` (5) streams open (per account, or per address);
+   - refuses a caller who already has `MaxStreamsPerCaller` (5) streams open that watch something (per
+     account, or per address);
    - acknowledges (`notifications/subscriptions/acknowledged`) only the URIs the caller can read right now.
      Malformed URIs, events the caller isn't part of and missing events are left out. `*ListChanged` requests
-     are never honored, so they are left out too. A stream with nothing acknowledged ends right away;
+     are never honored, so they are left out too;
+   - keeps a stream that watches nothing open, idle, until its lifetime ends, without taking one of the
+     caller's slots. Claude Code opens such a stream on every connection (it asks only for `list_changed`),
+     and retries a few times, seconds apart, when the stream ends right away;
    - forwards `IEventChanges` for those events as `notifications/resources/updated`: an event URI on every
      change, a status URI only when its marker moved. Every notification, the acknowledgement included,
      carries `_meta["io.modelcontextprotocol/subscriptionId"]`, the listen request's id;

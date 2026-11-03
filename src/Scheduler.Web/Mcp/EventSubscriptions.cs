@@ -36,9 +36,6 @@ internal static class EventSubscriptions
         if (requested.Count > options.MaxUrisPerStream)
             throw new McpException($"A listen request can watch at most {options.MaxUrisPerStream} resources; this one asked for {requested.Count}.");
 
-        using var slot = services.GetRequiredService<ListenStreams>().TryOpen(caller, options.MaxStreamsPerCaller)
-            ?? throw new McpException($"You already have {options.MaxStreamsPerCaller} listen streams open. Close one, or watch more resources on one stream.");
-
         // Subscribe before the first reads, so a change saved while they run isn't missed. Until the watched
         // events are known every change is kept; after that only theirs.
         var changes = ChangeQueue.CreateBounded<Guid>(new BoundedChannelOptions(Backlog)
@@ -65,6 +62,13 @@ internal static class EventSubscriptions
         }
         Volatile.Write(ref watchedEvents, watches.Select(w => w.EventId).ToHashSet());
 
+        // Only a stream that watches something takes one of the caller's slots. One that watches nothing (a client
+        // that asked only for list_changed, as Claude Code does) does no work and costs just the open request.
+        using var slot = watches.Count == 0
+            ? null
+            : services.GetRequiredService<ListenStreams>().TryOpen(caller, options.MaxStreamsPerCaller)
+                ?? throw new McpException($"You already have {options.MaxStreamsPerCaller} listen streams open. Close one, or watch more resources on one stream.");
+
         var subscriptionId = JsonSerializer.SerializeToNode(request.JsonRpcRequest.Id, McpJsonUtilities.DefaultOptions);
         // Only resource subscriptions are honored; list_changed requests are left out of the acknowledgement.
         // The SDK's acknowledgement type has no _meta, so the tag is added to its JSON.
@@ -80,12 +84,14 @@ internal static class EventSubscriptions
         log.LogInformation("Listen stream opened with {Granted} of {Requested} resources", watches.Count, requested.Count);
 
         // Ending the stream after a while, rather than sending keepalives, keeps proxies from cutting it while
-        // idle and makes the client reconnect with a fresh token.
+        // idle and makes the client reconnect with a fresh token. A stream with nothing (left) to watch stays open
+        // until then too: clients reconnect as soon as a stream ends, so ending it early only makes them retry.
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         lifetime.CancelAfter(TimeSpan.FromMinutes(options.StreamMinutes));
+        var reason = "failed";
         try
         {
-            while (watches.Any(w => w.Active) && await changes.Reader.WaitToReadAsync(lifetime.Token))
+            while (await changes.Reader.WaitToReadAsync(lifetime.Token))
             {
                 var changed = new HashSet<Guid>();
                 while (changes.Reader.TryRead(out var eventId))
@@ -122,11 +128,13 @@ internal static class EventSubscriptions
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             // The stream's lifetime is up; the client reconnects.
+            reason = "lifetime ended";
         }
         finally
         {
-            log.LogInformation("Listen stream closed ({Reason})",
-                cancellationToken.IsCancellationRequested ? "client went away" : "lifetime ended");
+            if (cancellationToken.IsCancellationRequested)
+                reason = "client went away";
+            log.LogInformation("Listen stream closed ({Reason})", reason);
         }
 
         cancellationToken.ThrowIfCancellationRequested();
