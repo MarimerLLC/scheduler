@@ -45,8 +45,9 @@ Version 1 is complete (roadmap steps 1 to 5 in the design doc) and runs in produ
   reminder, deadline, retention and time-zone jobs
 - Rate limits, per-organizer limits, and the Kubernetes deployment (`k8s/`, [docs/deployment.md](docs/deployment.md))
 
-Next (v1.1 in the design doc): a long-running `wait_for_update` task, RockBot integration, and an `.ics`
-invite for organizers without a calendar MCP server.
+Next (v1.1 in the design doc): pushing event changes to agents with MCP resource subscriptions
+([#36](https://github.com/MarimerLLC/scheduler/issues/36)), RockBot integration, and an `.ics` invite for
+organizers without a calendar MCP server.
 
 ## Layout
 

@@ -42,7 +42,8 @@ builder.Services
     .AddMcpServer(SchedulerMcpOptions.Configure)
     // Stateless: no tool needs a server-to-client request or session state, and any replica can serve
     // any call. Tools that ask the user something use MRTR input requests (McpQuestion), which end the call
-    // instead of holding it open. Revisit when adding the optional wait_for_update task (docs/design.md, "MCP Tasks").
+    // instead of holding it open. Push updates (#36) will use a subscriptions/listen handler, whose own request
+    // stream carries the notifications, so they don't need a session either (docs/design.md, "Push updates").
     .WithHttpTransport(options => options.Stateless = true)
     .WithTools<SchedulingTools>()
     .WithTools<AdminTools>()
