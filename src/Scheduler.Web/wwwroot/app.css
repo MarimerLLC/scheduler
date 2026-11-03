@@ -40,6 +40,7 @@ h1:focus {
     --surface: #f6f8fa;
     --accent: #0969da;
     --danger: #cf222e;
+    --success: #1a7f37;
     --background: #ffffff;
 }
 
@@ -51,6 +52,7 @@ h1:focus {
         --surface: #151b23;
         --accent: #4493f8;
         --danger: #f85149;
+        --success: #3fb950;
         --background: #0d1117;
     }
 }
@@ -110,6 +112,43 @@ button.danger { color: var(--danger); border-color: var(--danger); }
 .message { padding: 0.5rem 0.75rem; border-left: 3px solid var(--accent); background: var(--surface); }
 .message.error { border-left-color: var(--danger); }
 
+/* StatusNotice: the outcome of what the person just did, the same on every page. It sticks to the top of the window
+   while the page scrolls, so it is seen even when the button was far down. The region is empty until there is one. */
+.notice-region { position: sticky; top: 0.5rem; z-index: 10; }
+.notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    margin: 0.75rem 0;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--success);
+    border-left-width: 4px;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--success) 12%, var(--background));
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+    animation: notice-in 0.25s ease-out;
+}
+.notice-error { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, var(--background)); }
+.notice-icon {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.4rem;
+    height: 1.4rem;
+    border-radius: 50%;
+    background: var(--success);
+    color: var(--background);
+    font-weight: 700;
+    line-height: 1;
+}
+.notice-error .notice-icon { background: var(--danger); }
+.notice-text { flex: 1; overflow-wrap: anywhere; }
+.notice-dismiss { flex: none; padding: 0 0.45rem; border: none; background: transparent; font-size: 1.25rem; line-height: 1.4rem; color: var(--muted); }
+.notice-dismiss[hidden] { display: none; }
+@keyframes notice-in { from { opacity: 0; transform: translateY(-0.4rem); } }
+@media (prefers-reduced-motion: reduce) { .notice { animation: none; } }
+
 table.list { width: 100%; border-collapse: collapse; }
 table.list th, table.list td { text-align: left; padding: 0.5rem; border-bottom: 1px solid var(--border); vertical-align: top; }
 table.list td:last-child { white-space: nowrap; }
@@ -165,7 +204,7 @@ a.button {
 .page-heading h1 { margin-right: auto; }
 .state { font-size: 0.8rem; padding: 0.1rem 0.5rem; border-radius: 999px; border: 1px solid var(--border); white-space: nowrap; }
 .state-open { border-color: var(--accent); color: var(--accent); }
-.state-finalized { border-color: #1a7f37; color: #1a7f37; }
+.state-finalized { border-color: var(--success); color: var(--success); }
 .state-cancelled, .state-expired { color: var(--muted); }
 .event-list { padding-left: 1.25rem; }
 .event-list li { margin: 0.25rem 0; }

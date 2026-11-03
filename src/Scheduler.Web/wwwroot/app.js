@@ -28,3 +28,25 @@ window.scheduler = { timeZone: () => Intl.DateTimeFormat().resolvedOptions().tim
     // Blazor's enhanced navigation swaps page content without a full load.
     window.Blazor?.addEventListener?.('enhancedload', showViewerTimes);
 })();
+
+// StatusNotice on static pages: interactive pages close a notice themselves; on a page that only posts forms, the
+// close button stays hidden unless this script is here to handle it.
+(() => {
+    const showDismissButtons = () => {
+        for (const button of document.querySelectorAll('[data-notice-dismiss][hidden]')) {
+            button.hidden = false;
+        }
+    };
+
+    document.addEventListener('click', event => {
+        const button = event.target instanceof Element ? event.target.closest('[data-notice-dismiss]') : null;
+        button?.closest('.notice')?.remove();
+    });
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', showDismissButtons);
+    } else {
+        showDismissButtons();
+    }
+    window.Blazor?.addEventListener?.('enhancedload', showDismissButtons);
+})();

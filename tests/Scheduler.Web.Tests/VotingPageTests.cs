@@ -68,6 +68,7 @@ public sealed partial class VotingPageTests
         html = await TextOf(response);
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode, html);
         StringAssert.Contains(html, "your answers are saved");
+        StringAssert.Contains(html, "class=\"notice notice-success\"", "the shared success notice, not a plain paragraph");
 
         var votes = await VotesOfAsync("bob@example.com");
         Assert.AreEqual(VoteValue.Preferred, votes![ev.Slots[0].SlotId]);
@@ -76,6 +77,22 @@ public sealed partial class VotingPageTests
 
         var bob = (await GetAsOrganizerAsync(ev)).Participants.Single(p => p.Email == "bob@example.com");
         Assert.AreEqual("Mornings are best", bob.Note);
+    }
+
+    [TestMethod]
+    public async Task Saving_without_an_answer_shows_an_error_notice_and_saves_nothing()
+    {
+        var ev = await CreateEventAsync();
+        var browser = _app.CreateBrowser();
+        await browser.Http.GetAsync(VotingLinkIn((await _app.OutboxAsync()).Single(o => o.To == "bob@example.com")));
+
+        var response = await browser.SubmitFormAsync($"/e/{ev.ShortCode}", ("note", "Not sure yet"));
+
+        var html = await TextOf(response);
+        StringAssert.Contains(html, "class=\"notice notice-error\" role=\"alert\"");
+        StringAssert.Contains(html, "Choose an answer for at least one time.");
+        Assert.DoesNotContain("your answers are saved", html);
+        Assert.IsNull(await VotesOfAsync("bob@example.com"));
     }
 
     [TestMethod]

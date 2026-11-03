@@ -52,10 +52,7 @@ else
         <blockquote class="organizer-text">@_event.Description</blockquote>
     }
 
-    @if (_message is not null)
-    {
-        <p class="@(_isError ? "message error" : "message")" role="status">@_message</p>
-    }
+    <StatusNotice Value="_notice" OnDismiss="() => _notice = null" />
 
     @if (_finalized is not null)
     {
@@ -226,8 +223,7 @@ else
     private FinalizeResult? _finalized;
     private bool _loading = true;
     private bool _busy;
-    private string? _message;
-    private bool _isError;
+    private Notice? _notice;
     private (Guid SlotId, string Action)? _confirm;
     private bool _confirmCancel;
     private string? _cancelReason;
@@ -333,13 +329,11 @@ else
         _busy = true;
         try
         {
-            _message = await action(_event);
-            _isError = false;
+            _notice = Notice.Success(await action(_event));
         }
         catch (SchedulingException ex)
         {
-            _message = ex.Message;
-            _isError = true;
+            _notice = Notice.Error(ex.Message);
         }
         finally
         {
