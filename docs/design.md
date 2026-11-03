@@ -542,25 +542,72 @@ in a task store and the client polls. None of the tools above runs long; the lon
 *event*, whose ID already lets people pick it up again in later sessions. A session-based client can't sit
 on a multi-day task anyway. **Clients must never need Tasks.**
 
-One tool earns it: **`wait_for_update(eventId, timeoutMinutes)`**, with task support *optional*.
+Re-evaluated on 2026-11-03 against SDK 2.2.0's `ModelContextProtocol.Extensions.Tasks` and RockBot's task
+support (RockBot `docs/tools.md`, "Background tasks"). The decision stands: no scheduling task, one optional
+waiting tool, low priority. Its main value beyond RockBot is as a clean example of where Tasks fit: the
+long-lived event is a resource with a handle, the bounded wait is the task, and questions to the user are
+MRTR.
+
+#### Why scheduling itself isn't a task
+
+A task is one tool call whose *server-side work* takes a while. Scheduling takes days because people are
+slow; the server sits idle, and the ending (finalizing) is the organizer's decision, not work the server
+finishes. Making `create_event` a task that completes at finalize would run into these problems:
+
+- **The work runs in process.** The SDK runs a task's tool handler in the background until it returns. A
+  durable store keeps the task *record*, but a restart kills the handler, and the single replica restarts on
+  every deploy.
+- **RockBot's limits.** `taskTimeoutMinutes` defaults to 60 (`McpBridge:DefaultTaskTimeoutMinutes`), with
+  `McpBridge:MaxTasksPerSession` 3 and `McpBridge:MaxTasks` 20. A multi-day task times out, and it holds a
+  slot for each event. Wisps, workers, scheduled tasks and patrols never get tasks; they call synchronously.
+- **Other clients.** Session-based clients can't keep a conversation open for days, so they'd need the
+  non-task path anyway.
+- **It breaks MRTR.** In SDK 2.2.0 a tool that throws `InputRequiredException` inside a task fails it ("MRTR
+  and tasks cannot be composed via [McpServerTool] yet"). `create_event` and `cancel_event` would lose
+  [their questions](#asking-for-whats-missing), or need a second version built on in-task `ElicitAsync`.
+- **The handle exists already.** The shortCode lets any agent pick the event up in a later session, and the
+  organizer emails ("everyone has answered", "a required person can't make any time") already say when to
+  come back.
+
+#### What fits: `wait_for_update(eventId, timeoutMinutes)`
+
+Task support is *optional*.
 
 - Called normally: returns the event's current state immediately. Works for every client.
-- Called as a task: completes on the next meaningful change (every required participant has voted, the
-  deadline passes, the event is finalized or cancelled) or at the timeout.
+- Called as a task: completes on the next meaningful change or at the timeout. A meaningful change is: every
+  required participant has voted, a required participant rules out every time, the deadline passes, or the
+  event is finalized or cancelled.
+- Only this tool runs as a task. `McpTasksOptions.ExecutionModeSelector` picks the mode per call, so this
+  tool can be `Optional` while every other tool stays `Synchronous`.
+- The handler waits on `IEventChanges` (services and jobs already raise it after each save) with the timeout,
+  then returns the event.
 
-RockBot's MCP bridge turns a completed task into a new turn, so RockBot reacts without the email; everyone
-else relies on email. Constraints:
+RockBot's MCP bridge turns a completed task into a new turn, so RockBot reacts within seconds instead of on
+its next mail check. No other client gains anything.
 
-- **Durable task store** in PostgreSQL. The SDK's in-memory store loses tasks on a restart, which the
-  client sees as an unknown-task error (`-32602`).
-- **Cap the timeout** (24 hours or less). RockBot limits tasks per session and has `taskTimeoutMinutes`; a
-  multi-day task would hold a slot.
-- In SDK 2.2.0, a task can ask the user something with `ElicitAsync`, but MRTR-style input requests can't
-  be combined with tasks yet (a tool that throws `InputRequiredException` inside a task fails it).
-  `wait_for_update` has nothing to ask, so it isn't affected; just never call `McpQuestion` from a task-enabled
-  tool. The tools that do ask ([Asking for what's missing](#asking-for-whats-missing)) don't support tasks.
-- Revisit the stateless transport setting when adding it. Task requests are routed by task ID, so polling
-  from any connection should work; verify against the SDK.
+#### What it would take
+
+- **Durable task store** in PostgreSQL: an `IMcpTaskStore` plus a migration. The in-memory store loses tasks
+  on a restart, which RockBot reports to the conversation as a lost task. SEP-2663 requires each task to be
+  stored durably before `CreateTaskAsync` returns. Under stateless HTTP every request gets a fresh server, so
+  the store must be a singleton or external storage.
+- **Restart recovery.** A deploy kills the waiting handlers. A startup sweep completes every task that was
+  still working with the event's current state. For a "tell me when something changes" tool, an occasional
+  unnecessary wake-up is harmless.
+- **The timeout trade-off.** Every completion starts a RockBot turn and spends tokens, including a
+  "nothing changed" timeout. A 60-minute wait means up to 24 turns a day for each watched event. Prefer waits
+  of about 24 hours (cap it there) and raise `taskTimeoutMinutes` on RockBot's scheduler entry to match. Each
+  watched event still uses one of the conversation's 3 slots.
+- **RockBot config:** `"tasks": true` on the scheduler entry. Calls from a conversation then go out as task
+  calls (`CallToolAsTaskAsync`) for every tool. Verify that the synchronous tools still answer normally and
+  that their MRTR questions still work through that path; this hasn't been tested.
+- **The rule for questions.** Never call `McpQuestion` from a task-enabled tool. A task that has to ask asks
+  with `ElicitAsync`, which the extension routes through the task store; in `handback` mode RockBot delivers
+  it as its own turn. `wait_for_update` has nothing to ask.
+- **Transport.** Task requests are routed by task ID, so stateless HTTP with a shared store should work.
+  Confirm it in tests.
+- **Tests** at about the scale of the MRTR change: the store, the wait completing on each trigger and at the
+  timeout, restart recovery, and a client without Tasks getting the immediate answer.
 
 ## Web UI
 
@@ -897,7 +944,8 @@ The runbook is [deployment.md](deployment.md); the manifests and scripts are in 
    Funnel host, manifests, migration Job and runbook. The first deployment, and the relay and DNS for
    `sched.marimer.llc`, are steps in [deployment.md](deployment.md). Provider webhooks for later bounces and
    complaints are left for when the volume calls for them.
-6. **v1.1.** `wait_for_update` as an optional task with a durable task store; RockBot integration (an
+6. **v1.1.** `wait_for_update` as an optional task with a durable task store (low priority; see
+   [MCP Tasks](#mcp-tasks-optional-v11) for the evaluation and what it would take); RockBot integration (an
    `mcp.json` entry plus handling the invitation emails it already reads through Adjutant); `.ics`
    fallback invite for organizers without a calendar MCP.
 
