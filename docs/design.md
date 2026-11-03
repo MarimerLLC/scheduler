@@ -453,7 +453,9 @@ answers 401 rather than redirecting an MCP client to a sign-in page.
 ## MCP surface
 
 Streamable HTTP at `/mcp`, MCP C# SDK 2.2.0, protocol 2026-07-28. The transport is stateless: no tool
-needs a server-to-client request, so any replica can serve any call.
+needs a server-to-client request or session state, so any replica can serve any call. When a tool needs
+something from the user, it asks with an MRTR input request (see [Asking for what's missing](#asking-for-whats-missing)),
+which ends the call rather than holding it open.
 
 ### Server instructions
 
@@ -469,7 +471,7 @@ meant for the caller come back as tool errors with a specific message.
 
 | Tool | Who | Annotations | Behavior |
 |---|---|---|---|
-| `create_event` | Allowlisted organizer | open-world | Validates (title ≤ 120, duration 5–480 min, 1–20 slots, ≤ 50 participants, slots in the future and distinct, respond-by in the future), opens the event, queues one invitation per participant. Returns the event with `id` and `shortCode`. |
+| `create_event` | Allowlisted organizer | open-world | Validates (title ≤ 120, duration 5–480 min, 1–20 slots, ≤ 50 participants, slots in the future and distinct, respond-by in the future), opens the event, queues one invitation per participant. Returns the event with `id` and `shortCode`. A client that supports MRTR is asked for a missing title, time zone, invite list or candidate times, and offered once to add a description when the title is short. |
 | `list_my_events` | Anyone signed in | read-only | Filter `needs_my_vote` (default), `organizing` or `all`. |
 | `get_event` | Organizer or participant | read-only | Slots with totals and the caller's own votes; for the organizer, each participant's votes and the ranking. Optional `timeZone` adds viewer-local times. |
 | `vote` | Participant | idempotent | Upserts answers (`preferred`, `yes`, `if_necessary`, `no`) for one or more slots, plus an optional note (≤ 280). Emails the organizer once every required participant has responded, and right away when a required participant's answers become no on every current time. |
@@ -477,7 +479,7 @@ meant for the caller come back as tool errors with a specific message.
 | `withdraw_slot` | Organizer | destructive, idempotent | Removes a slot that no longer works for the organizer and deletes its votes. No email. Needs `version`. |
 | `finalize_event` | Organizer | open-world | Picks the slot, emails everyone, returns `localStart`, `timeZone`, `durationMinutes`, `attendeeEmails` for creating the calendar event. Needs `version`. The agent should re-check the organizer's calendar first. |
 | `resend_invitations` | Organizer | open-world | While the event is open, emails the invitation again (same personal voting link, current times) to the listed participants, or to everyone invited if none are listed. An address that isn't invited is refused; anyone unsubscribed, bounced, or sent the invitation within `Scheduler:InvitationResendCooldownMinutes` (60) is skipped with a notice. Returns `resent`, the addresses it went to. |
-| `cancel_event` | Organizer | destructive, open-world | Cancels; emails everyone who was invited, quoting the organizer's reason (required, ≤ 280). Before a time is picked the email says the invitation was withdrawn; after, that the meeting is cancelled. |
+| `cancel_event` | Organizer | destructive, open-world | Cancels; emails everyone who was invited, quoting the organizer's reason (required, ≤ 280). Before a time is picked the email says the invitation was withdrawn; after, that the meeting is cancelled. A client that supports MRTR is asked for an empty reason. |
 | `record_calendar_event` | Organizer | idempotent | Stores the iCalendar UID of the meeting the agent created, after finalizing. |
 | `get_my_access` | Anyone signed in | read-only | The caller's verified addresses, whether they may organize or administer, and their waiting (or recently declined) request to organize. |
 | `request_to_organize` | Anyone signed in who can't organize | idempotent | Asks the admins to let one of the caller's addresses organize, with an optional checked note. See [Requests to organize](#requests-to-organize). |
@@ -487,6 +489,42 @@ meant for the caller come back as tool errors with a specific message.
 | `list_organizer_requests` | Admin (hidden from others) | read-only | Waiting requests to organize, oldest first. |
 | `approve_organizer_request` | Admin (hidden from others) | open-world | Grants the request's address and emails the requester. |
 | `decline_organizer_request` | Admin (hidden from others) | destructive, open-world | Declines and emails the requester, who can't ask again for a while. |
+
+### Asking for what's missing
+
+The calling agent normally confirms everything with its user before calling a tool. When a call still
+leaves something out, `create_event` and `cancel_event` ask for it with an **MRTR input request**
+(Multi Round-Trip Requests, SEP-2322, in protocol 2026-07-28). The tool ends the call with an
+input-required result holding one elicitation form. The client gets the answer (from its agent or from the
+user) and calls the tool again with the same arguments plus the answer. The server keeps nothing between
+the two calls, so this works on the stateless transport and on any replica (`McpQuestion`).
+
+| Tool | Asks for | If the user declines |
+|---|---|---|
+| `cancel_event` | An empty or blank `reason` (required) | Nothing is cancelled. |
+| `create_event` | An empty `title`, `organizerTimeZone`, `participants` or `slots` (required), all in one form. Invitees are comma-separated addresses; times are local times in the organizer's zone. | Nothing is created. |
+| `create_event` | A `description`, when there is none and the title has fewer than four words (optional, "leave it blank to skip") | The event is created without one. |
+
+Rules:
+
+- **Only clients that can answer.** The server asks only when the request negotiated MRTR (2026-07-28) and
+  declared form elicitation in its per-request client capabilities. Every other client gets the old
+  behavior: a missing required value is refused with the usual validation error, and a missing description
+  stays missing. (SDK 2.2.0 leaves `McpServer.ClientCapabilities` null on the stateless transport, so the
+  check reads them from the request's own context.)
+- **Ask once.** The retry carries the answer, and the tool acts on it or says what is still missing, but
+  never asks again in the same call.
+- **Only when the answer can be used.** `cancel_event` asks only if the caller organizes the event and it can
+  still be cancelled; `create_event` only if the caller may organize and the duration is valid. Anything
+  else gets its usual error straight away, not after a question.
+- **Parameters stay required.** `reason`, `title`, `organizerTimeZone`, `participants` and `slots` stay
+  required in the tool schemas, so clients without MRTR are still told to supply them. Asking covers the
+  agent that sends an empty value anyway.
+- **The answer is input like any other.** It goes through the same `ISchedulingService` validation and
+  `FieldLimits` as tool arguments. Nothing in the question repeats text written by anyone but the caller.
+
+RockBot answers these through its MCP bridge. Set `"elicitation": { "mode": "handback" }` in the scheduler
+server's entry so free-text questions reach the agent, which answers from its context or asks the user.
 
 ### Prompts
 
@@ -518,8 +556,9 @@ else relies on email. Constraints:
 - **Cap the timeout** (24 hours or less). RockBot limits tasks per session and has `taskTimeoutMinutes`; a
   multi-day task would hold a slot.
 - In SDK 2.2.0, a task can ask the user something with `ElicitAsync`, but MRTR-style input requests can't
-  be combined with tasks yet. This design never asks the user anything from the server (each person's own
-  agent confirms with them), so it isn't affected.
+  be combined with tasks yet (a tool that throws `InputRequiredException` inside a task fails it).
+  `wait_for_update` has nothing to ask, so it isn't affected; just never call `McpQuestion` from a task-enabled
+  tool. The tools that do ask ([Asking for what's missing](#asking-for-whats-missing)) don't support tasks.
 - Revisit the stateless transport setting when adding it. Task requests are routed by task ID, so polling
   from any connection should work; verify against the SDK.
 

@@ -41,7 +41,8 @@ builder.Services.AddRazorComponents()
 builder.Services
     .AddMcpServer(SchedulerMcpOptions.Configure)
     // Stateless: no tool needs a server-to-client request or session state, and any replica can serve
-    // any call. Revisit when adding the optional wait_for_update task (docs/design.md, "MCP Tasks").
+    // any call. Tools that ask the user something use MRTR input requests (McpQuestion), which end the call
+    // instead of holding it open. Revisit when adding the optional wait_for_update task (docs/design.md, "MCP Tasks").
     .WithHttpTransport(options => options.Stateless = true)
     .WithTools<SchedulingTools>()
     .WithTools<AdminTools>()

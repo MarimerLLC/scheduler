@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using ModelContextProtocol;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using Scheduler.Core;
 using Scheduler.Core.Model;
@@ -42,26 +43,32 @@ public sealed class SchedulingTools(ISchedulingService scheduling, IAdminService
         Run(caller => admin.RequestToOrganizeAsync(caller, email, note, cancellationToken));
 
     [McpServerTool(Name = "create_event", Title = "Create scheduling event", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = true)]
-    [Description("Start scheduling a meeting: proposes candidate times that already work for the organizer and emails each participant a request to vote. Only allowlisted organizers can create events. Returns the event, including its id and shortCode.")]
+    [Description("Start scheduling a meeting: proposes candidate times that already work for the organizer and emails each participant a request to vote. Only allowlisted organizers can create events. Returns the event, including its id and shortCode. If your client supports MCP input requests (MRTR), the server asks the user for a missing title, time zone, invite list or candidate times, and, when the title is only a few words and there is no description, offers once to add one (the user can skip it).")]
     public Task<string> CreateEvent(
+        RequestContext<CallToolRequestParams> context,
         [Description("Short meeting title, at most 120 characters.")] string title,
         [Description("Meeting length in minutes, 5 to 480.")] int durationMinutes,
         [Description("The organizer's IANA time zone, e.g. America/Chicago.")] string organizerTimeZone,
         [Description("People to invite, at most 50. Don't include the organizer.")] McpParticipant[] participants,
         [Description("Candidate start times, 1 to 20, each local wall time plus IANA zone.")] McpSlot[] slots,
-        [Description("Optional agenda or context, at most 1000 characters.")] string? description = null,
+        [Description("Optional agenda or context, at most 1000 characters. Worth adding when the title alone doesn't say what the meeting is for.")] string? description = null,
         [Description("Optional voting deadline as local wall time in the organizer's zone, e.g. 2026-10-30T17:00. Must be before the last proposed time.")] string? respondBy = null,
         [Description("Optional: the organizer's name as participants should see it.")] string? organizerName = null,
         CancellationToken cancellationToken = default) =>
-        Run(caller => scheduling.CreateEventAsync(caller, new CreateEventRequest(
-            title,
-            description,
-            durationMinutes,
-            organizerTimeZone,
-            participants.Select(p => new ParticipantInput(p.Email, p.Name, p.Optional ? AttendeeRole.Optional : AttendeeRole.Required)).ToList(),
-            slots.Select(s => new SlotInput(s.Start, s.TimeZone)).ToList(),
-            respondBy,
-            organizerName), cancellationToken));
+        Run(async caller =>
+        {
+            var input = await CompleteAsync(
+                caller, context, new NewEvent(title, description, durationMinutes, organizerTimeZone, participants, slots), cancellationToken);
+            return await scheduling.CreateEventAsync(caller, new CreateEventRequest(
+                input.Title ?? "",
+                input.Description,
+                input.DurationMinutes,
+                input.TimeZone ?? "",
+                (input.Participants ?? []).Select(p => new ParticipantInput(p.Email, p.Name, p.Optional ? AttendeeRole.Optional : AttendeeRole.Required)).ToList(),
+                (input.Slots ?? []).Select(s => new SlotInput(s.Start, s.TimeZone)).ToList(),
+                respondBy,
+                organizerName), cancellationToken);
+        });
 
     [McpServerTool(Name = "list_my_events", Title = "List my scheduling events", ReadOnly = true, Idempotent = true, OpenWorld = false)]
     [Description("Lists scheduling events visible to the user. By default returns only events waiting for the user's vote.")]
@@ -130,12 +137,36 @@ public sealed class SchedulingTools(ISchedulingService scheduling, IAdminService
         Run(caller => scheduling.ResendInvitationsAsync(caller, eventId, emails, cancellationToken));
 
     [McpServerTool(Name = "cancel_event", Title = "Cancel scheduling event", ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = true)]
-    [Description("Organizer only: calls the meeting off and emails everyone invited, with the organizer's reason. While voting is still going, the email says the invitation was withdrawn; after finalize_event, it says the meeting is cancelled. Ask the organizer for the reason and confirm before calling.")]
+    [Description("Organizer only: calls the meeting off and emails everyone invited, with the organizer's reason. While voting is still going, the email says the invitation was withdrawn; after finalize_event, it says the meeting is cancelled. Ask the organizer for the reason and confirm before calling. If the reason is left empty and your client supports MCP input requests (MRTR), the server asks the user for it; otherwise an empty reason is refused.")]
     public Task<string> CancelEvent(
+        RequestContext<CallToolRequestParams> context,
         [Description("The event's id or shortCode.")] string eventId,
         [Description("Required: the organizer's short reason for cancelling, quoted in the email to everyone invited.")] string reason,
         CancellationToken cancellationToken = default) =>
-        Run(caller => scheduling.CancelAsync(caller, eventId, reason, cancellationToken));
+        Run(async caller =>
+        {
+            if (string.IsNullOrWhiteSpace(reason))
+            {
+                if (McpQuestion.AnswerTo(context) is { } answer)
+                {
+                    reason = McpQuestion.TextOf(answer, "reason")
+                        ?? throw new McpException("No reason was given, so the event was not cancelled.");
+                }
+                else if (McpQuestion.CanAsk(context))
+                {
+                    // Ask only when the answer can be used; anything else gets its usual error from CancelAsync.
+                    var ev = await scheduling.GetEventAsync(caller, eventId, viewerTimeZone: null, cancellationToken);
+                    if (ev.IsOrganizer && SchedulingEvent.CanTransition(ev.State, EventState.Cancelled))
+                    {
+                        throw new McpQuestion()
+                            .Text("reason", "Reason for cancelling",
+                                "A short reason, quoted in the email to everyone invited.", FieldLimits.NoteMax, required: true)
+                            .Ask($"Why is \"{ev.Title}\" ({ev.ShortCode}) being cancelled? Everyone invited gets an email quoting the reason.");
+                    }
+                }
+            }
+            return await scheduling.CancelAsync(caller, eventId, reason, cancellationToken);
+        });
 
     [McpServerTool(Name = "record_calendar_event", Title = "Record the calendar event", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
     [Description("Organizer only: after finalize_event, stores the iCalendar UID of the meeting created in the organizer's calendar so a later reschedule or cancel can refer to it.")]
@@ -148,6 +179,108 @@ public sealed class SchedulingTools(ISchedulingService scheduling, IAdminService
             await scheduling.RecordCalendarEventAsync(caller, eventId, calendarEventUid, cancellationToken);
             return new { recorded = true };
         });
+
+    /// <summary>A title with fewer words than this, and no description, gets one offer to add a description.</summary>
+    internal const int ShortTitleWords = 4;
+
+    private sealed record NewEvent(
+        string? Title, string? Description, int DurationMinutes, string? TimeZone, McpParticipant[]? Participants, McpSlot[]? Slots);
+
+    /// <summary>
+    /// Fills in what create_event left out by asking through MRTR (<see cref="McpQuestion"/>): the title, time zone,
+    /// invite list and candidate times, which are required, and a description when the title is short, which can be
+    /// skipped. Returns the input unchanged when nothing is missing or this client can't be asked, so the service
+    /// reports anything required that is still missing.
+    /// </summary>
+    private async Task<NewEvent> CompleteAsync(CallerIdentity caller, RequestContext<CallToolRequestParams> context, NewEvent input, CancellationToken cancellationToken)
+    {
+        var needTitle = string.IsNullOrWhiteSpace(input.Title);
+        var needZone = string.IsNullOrWhiteSpace(input.TimeZone);
+        var needParticipants = input.Participants is not { Length: > 0 };
+        var needSlots = input.Slots is not { Length: > 0 };
+        var offerDescription = string.IsNullOrWhiteSpace(input.Description) && (needTitle || WordCount(input.Title!) < ShortTitleWords);
+        var required = new List<string>();
+        if (needTitle) required.Add("a title");
+        if (needZone) required.Add("a time zone");
+        if (needParticipants) required.Add("who to invite");
+        if (needSlots) required.Add("candidate times");
+        if (required.Count == 0 && !offerDescription)
+            return input;
+
+        if (McpQuestion.AnswerTo(context) is not { } answer)
+        {
+            // Ask only when the answer can be used; anything else gets its usual error from CreateEventAsync.
+            if (!McpQuestion.CanAsk(context)
+                || input.DurationMinutes is < FieldLimits.MinDurationMinutes or > FieldLimits.MaxDurationMinutes
+                || !(await admin.GetAccessAsync(caller, cancellationToken)).CanOrganize)
+                return input;
+
+            var zoneText = needZone ? "the organizer's time zone" : input.TimeZone!.Trim();
+            var question = new McpQuestion();
+            if (needTitle)
+                question.Text("title", "Title", $"A short meeting title, at most {FieldLimits.TitleMax} characters.", FieldLimits.TitleMax, required: true);
+            if (needZone)
+                question.Text("timeZone", "Time zone", "The organizer's IANA time zone, e.g. America/Chicago.", FieldLimits.TimeZoneIdMax, required: true);
+            if (needParticipants)
+                question.Text("participants", "Who to invite",
+                    $"Email addresses, separated by commas, at most {FieldLimits.MaxParticipantsPerEvent}. Don't include the organizer.", 4000, required: true);
+            if (needSlots)
+                question.Text("slots", "Candidate times",
+                    $"Start times that work for the organizer, as local times in {zoneText}, separated by commas, e.g. 2026-11-05T10:00, 2026-11-06T14:30. At most {FieldLimits.MaxSlotsPerEvent}.",
+                    1000, required: true);
+            if (offerDescription)
+                question.Text("description", "Description (optional)",
+                    $"What the meeting is for, for the people invited, at most {FieldLimits.DescriptionMax} characters. Leave it blank to skip.",
+                    FieldLimits.DescriptionMax, required: false);
+
+            var what = required.Count == 0
+                ? "doesn't say much about what the meeting is for. Add a short description for the people invited, or leave it blank to skip."
+                : $"still needs {JoinAnd(required)} before the invitations go out.";
+            throw question.Ask(needTitle ? $"This meeting {what}" : $"\"{input.Title!.Trim()}\" {what}");
+        }
+
+        // Skipping the optional description is fine; leaving out anything required stops here.
+        if (!answer.IsAccepted && required.Count > 0)
+            throw new McpException($"The organizer didn't give {JoinAnd(required)}, so no event was created.");
+
+        var timeZone = needZone ? McpQuestion.TextOf(answer, "timeZone") : input.TimeZone;
+        var completed = input with
+        {
+            Title = needTitle ? McpQuestion.TextOf(answer, "title") : input.Title,
+            TimeZone = timeZone,
+            Participants = needParticipants
+                ? Split(McpQuestion.TextOf(answer, "participants"), ListSeparators).Select(email => new McpParticipant(email)).ToArray()
+                : input.Participants,
+            Slots = needSlots && timeZone is not null
+                ? Split(McpQuestion.TextOf(answer, "slots"), SlotSeparators).Select(start => new McpSlot(start, timeZone)).ToArray()
+                : input.Slots,
+            Description = offerDescription ? McpQuestion.TextOf(answer, "description") : input.Description,
+        };
+
+        var stillMissing = new List<string>();
+        if (string.IsNullOrWhiteSpace(completed.Title)) stillMissing.Add("a title");
+        if (string.IsNullOrWhiteSpace(completed.TimeZone)) stillMissing.Add("a time zone");
+        if (completed.Participants is not { Length: > 0 }) stillMissing.Add("who to invite");
+        if (completed.Slots is not { Length: > 0 }) stillMissing.Add("candidate times");
+        if (stillMissing.Count > 0)
+            throw new McpException($"The organizer didn't give {JoinAnd(stillMissing)}, so no event was created.");
+        return completed;
+    }
+
+    private static readonly char[] ListSeparators = [',', ';', ' ', '\t', '\r', '\n'];
+    private static readonly char[] SlotSeparators = [',', ';', '\r', '\n'];
+
+    private static string[] Split(string? text, char[] separators) =>
+        text?.Split(separators, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? [];
+
+    private static int WordCount(string text) =>
+        text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
+
+    private static string JoinAnd(List<string> items) => items.Count switch
+    {
+        1 => items[0],
+        _ => string.Join(", ", items[..^1]) + " and " + items[^1],
+    };
 
     private async Task<string> Run<T>(Func<CallerIdentity, Task<T>> action)
     {

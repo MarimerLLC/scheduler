@@ -39,7 +39,8 @@ public sealed class SchedulingPrompts
         1. Using my calendar tools, find 5-12 candidate start times over the next two weeks when I'm free,
            within my normal working hours in {timeZone}, spread across different days and times of day.
         2. Show me the candidates and the invite list, and wait for my confirmation.
-        3. Call create_event with each start as local wall time and time zone "{timeZone}".
+        3. Call create_event with each start as local wall time and time zone "{timeZone}". Give it a short title,
+           and a description saying what the meeting is for if the title alone doesn't.
         4. Tell me the event's shortCode so I can check on it later.
         """;
 }
