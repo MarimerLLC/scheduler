@@ -58,6 +58,19 @@ public sealed class SchedulingEvent
     /// <summary>Slots that haven't been withdrawn.</summary>
     public IEnumerable<ProposedSlot> ActiveSlots => Slots.Where(s => s.WithdrawnAt is null);
 
+    /// <summary>
+    /// True when <paramref name="participant"/> is required and has answered no to every current time, so no
+    /// time on the table can work. Their answers alone don't count while any time is unanswered.
+    /// </summary>
+    public bool RulesOutEveryTime(Participant participant)
+    {
+        if (participant.Role != AttendeeRole.Required)
+            return false;
+        var active = ActiveSlots.ToList();
+        return active.Count > 0
+            && active.All(s => participant.Votes.Any(v => v.SlotId == s.Id && v.Value == VoteValue.No));
+    }
+
     public void Open() => TransitionTo(EventState.Open);
 
     public void Finalize(Guid slotId, Instant now)

@@ -200,10 +200,10 @@ else
         @if (_confirmCancel)
         {
             <label class="field">
-                <span>Reason (optional; everyone invited sees it)</span>
-                <textarea rows="2" maxlength="@FieldLimits.NoteMax" @bind="_cancelReason"></textarea>
+                <span>Reason (required; it goes in the email to everyone invited)</span>
+                <textarea rows="2" maxlength="@FieldLimits.NoteMax" @bind="_cancelReason" @bind:event="oninput"></textarea>
             </label>
-            <button class="danger" disabled="@_busy" @onclick="CancelAsync">Confirm: cancel and tell everyone</button>
+            <button class="danger" disabled="@(_busy || string.IsNullOrWhiteSpace(_cancelReason))" @onclick="CancelAsync">Confirm: cancel and tell everyone</button>
             <button disabled="@_busy" @onclick="() => _confirmCancel = false">Don't cancel</button>
         }
         else
@@ -322,7 +322,8 @@ else
     {
         await Scheduling.CancelAsync(_caller!, ev.ShortCode, _cancelReason, CancellationToken.None);
         _confirmCancel = false;
-        return "Cancelled. Everyone invited was told.";
+        _cancelReason = null;
+        return "Cancelled. Everyone invited was emailed your reason.";
     });
 
     private async Task RunAsync(Func<EventView, Task<string>> action)

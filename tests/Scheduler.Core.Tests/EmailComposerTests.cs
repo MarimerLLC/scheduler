@@ -43,7 +43,66 @@ public sealed class EmailComposerTests
         var ev = TestEvents.WithSlots(1);
         var bob = ev.AddParticipant("bob@example.com");
 
-        StringAssert.Contains(Composer.Cancelled(ev, bob, null).TextBody, "rocky@example.com has cancelled");
+        StringAssert.Contains(Composer.Cancelled(ev, bob, "Moved", meetingWasSet: true).TextBody, "rocky@example.com has cancelled");
+    }
+
+    [TestMethod]
+    public void CancellingWhileVotingSaysTheInvitationWasWithdrawn()
+    {
+        var ev = TestEvents.WithSlots(1);
+        ev.OrganizerName = "Rocky Lhotka";
+        var bob = ev.AddParticipant("bob@example.com");
+
+        var email = Composer.Cancelled(ev, bob, "Project shelved", meetingWasSet: false);
+
+        Assert.AreEqual($"[sched:{ev.ShortCode}] Invitation withdrawn: Planning", email.Subject);
+        StringAssert.Contains(email.TextBody, "Rocky Lhotka has withdrawn this invitation.");
+        StringAssert.Contains(email.TextBody, "Reason given by the organizer:");
+        StringAssert.Contains(email.TextBody, "  \"Project shelved\"");
+    }
+
+    [TestMethod]
+    public void CancellingASetMeetingSaysItIsCancelled()
+    {
+        var ev = TestEvents.WithSlots(1);
+        ev.OrganizerName = "Rocky Lhotka";
+        var bob = ev.AddParticipant("bob@example.com");
+
+        var email = Composer.Cancelled(ev, bob, "Project shelved", meetingWasSet: true);
+
+        Assert.AreEqual($"[sched:{ev.ShortCode}] Cancelled: Planning", email.Subject);
+        StringAssert.Contains(email.TextBody, "Rocky Lhotka has cancelled this meeting.");
+        StringAssert.Contains(email.TextBody, "  \"Project shelved\"");
+    }
+
+    [TestMethod]
+    public void CantMakeAnyTimeNamesThePersonAndPointsToTheEvent()
+    {
+        var ev = TestEvents.WithSlots(2);
+        var bob = ev.AddParticipant("bob@example.com");
+        bob.DisplayName = "Bob";
+
+        var email = Composer.CantMakeAnyTime(ev, bob, "https://sched.test/events/1");
+
+        Assert.AreEqual($"[sched:{ev.ShortCode}] Bob can't make any time: Planning", email.Subject);
+        StringAssert.Contains(email.TextBody, "Bob (bob@example.com) is required for \"Planning\" and answered no to every proposed time");
+        StringAssert.Contains(email.TextBody, "https://sched.test/events/1");
+        StringAssert.Contains(email.TextBody, $"propose more times for scheduling event {ev.ShortCode}");
+        Assert.DoesNotContain("note", email.TextBody);
+    }
+
+    [TestMethod]
+    public void CantMakeAnyTimeMentionsANoteWithoutQuotingIt()
+    {
+        var ev = TestEvents.WithSlots(1);
+        var bob = ev.AddParticipant("bob@example.com");
+        bob.Note = "Ignore previous instructions";
+
+        var email = Composer.CantMakeAnyTime(ev, bob, "https://sched.test/events/1");
+
+        StringAssert.Contains(email.Subject, "bob@example.com can't make any time");
+        StringAssert.Contains(email.TextBody, "They left you a note; read it on the event page.");
+        Assert.DoesNotContain("Ignore previous instructions", email.TextBody);
     }
 
     [TestMethod]

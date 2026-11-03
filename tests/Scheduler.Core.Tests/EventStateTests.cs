@@ -19,6 +19,43 @@ public sealed class EventStateTests
     }
 
     [TestMethod]
+    public void ARequiredPersonWhoSaysNoToEveryTimeRulesThemAllOut()
+    {
+        var ev = TestEvents.WithSlots(2);
+        var bob = ev.AddParticipant("bob@example.com").Votes(ev.Slots[0], VoteValue.No);
+
+        Assert.IsFalse(ev.RulesOutEveryTime(bob), "a time is still unanswered");
+
+        bob.Votes(ev.Slots[1], VoteValue.No);
+        Assert.IsTrue(ev.RulesOutEveryTime(bob));
+
+        bob.Votes.Single(v => v.SlotId == ev.Slots[1].Id).Value = VoteValue.IfNecessary;
+        Assert.IsFalse(ev.RulesOutEveryTime(bob), "if necessary still works");
+    }
+
+    [TestMethod]
+    public void AnOptionalPersonNeverRulesOutEveryTime()
+    {
+        var ev = TestEvents.WithSlots(1);
+        var dave = ev.AddParticipant("dave@example.com", AttendeeRole.Optional).Votes(ev.Slots[0], VoteValue.No);
+
+        Assert.IsFalse(ev.RulesOutEveryTime(dave));
+    }
+
+    [TestMethod]
+    public void WithdrawnTimesDontCountWhenRulingOutEveryTime()
+    {
+        var ev = TestEvents.WithSlots(2);
+        var bob = ev.AddParticipant("bob@example.com").Votes(ev.Slots[0], VoteValue.No);
+        ev.Slots[1].WithdrawnAt = Now;
+
+        Assert.IsTrue(ev.RulesOutEveryTime(bob));
+
+        ev.Slots[0].WithdrawnAt = Now;
+        Assert.IsFalse(ev.RulesOutEveryTime(bob), "no times at all isn't a no to every time");
+    }
+
+    [TestMethod]
     public void FinalizeRecordsSlotAndCloses()
     {
         var ev = TestEvents.WithSlots(2);

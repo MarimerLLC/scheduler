@@ -183,6 +183,7 @@ public sealed class SchedulingService(
 
         var noteText = note is null ? null : OptionalText(note, FieldLimits.NoteMax, "note");
         var everyoneHadResponded = EveryoneResponded(ev);
+        var alreadyRuledOutEveryTime = access.Me.Where(ev.RulesOutEveryTime).ToHashSet();
 
         foreach (var participant in access.Me)
         {
@@ -206,6 +207,8 @@ public sealed class SchedulingService(
         }
 
         Audit(db, ev, caller, "vote.cast", new { slots = votes.Count }, now);
+        foreach (var participant in access.Me.Where(p => !alreadyRuledOutEveryTime.Contains(p) && ev.RulesOutEveryTime(p)))
+            QueueEmail(db, ev, ev.OrganizerEmail, await composer.CantMakeAnyTimeAsync(ev, participant, DashboardUrl(ev)), now, replyToOrganizer: false);
         if (!everyoneHadResponded && EveryoneResponded(ev))
             QueueEmail(db, ev, ev.OrganizerEmail, await composer.AllRespondedAsync(ev, DashboardUrl(ev)), now, replyToOrganizer: false);
 
@@ -402,8 +405,9 @@ public sealed class SchedulingService(
         var ev = await LoadEventAsync(db, eventRef, tracking: true, cancellationToken);
         RequireOrganizer(Authorize(ev, caller, account));
 
-        var reasonText = OptionalText(reason, FieldLimits.NoteMax, "reason");
+        var reasonText = RequireText(reason, FieldLimits.NoteMax, "reason");
         var participantsWereNotified = ev.State != EventState.Draft;
+        var meetingWasSet = ev.State == EventState.Finalized;
         ev.Cancel(now);
         Touch(db, ev, now);
 
@@ -411,7 +415,7 @@ public sealed class SchedulingService(
         if (participantsWereNotified)
         {
             foreach (var participant in ev.Participants)
-                QueueEmail(db, ev, participant.Email, await composer.CancelledAsync(ev, participant, reasonText), now);
+                QueueEmail(db, ev, participant.Email, await composer.CancelledAsync(ev, participant, reasonText, meetingWasSet), now);
         }
 
         await SaveAsync(db, ev, cancellationToken);

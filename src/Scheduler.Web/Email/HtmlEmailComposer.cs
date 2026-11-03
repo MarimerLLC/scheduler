@@ -50,11 +50,20 @@ internal sealed class HtmlEmailComposer(
             [nameof(EventEmail.Closing)] = PlainTextEmailComposer.FinalizedClosing,
         });
 
-    public Task<ComposedEmail> CancelledAsync(SchedulingEvent ev, Participant recipient, string? reason) =>
-        WithEventHtmlAsync(text.Cancelled(ev, recipient, reason), recipient.Email, ev, new()
+    public Task<ComposedEmail> CancelledAsync(SchedulingEvent ev, Participant recipient, string reason, bool meetingWasSet) =>
+        WithEventHtmlAsync(text.Cancelled(ev, recipient, reason, meetingWasSet), recipient.Email, ev, new()
         {
-            [nameof(EventEmail.Intro)] = $"{PlainTextEmailComposer.OrganizerName(ev)} has cancelled this meeting.",
+            [nameof(EventEmail.Intro)] = PlainTextEmailComposer.CancelledIntro(ev, meetingWasSet),
             [nameof(EventEmail.Reason)] = reason,
+        });
+
+    public Task<ComposedEmail> CantMakeAnyTimeAsync(SchedulingEvent ev, Participant who, string dashboardUrl) =>
+        WithEventHtmlAsync(text.CantMakeAnyTime(ev, who, dashboardUrl), ev.OrganizerEmail, ev, new()
+        {
+            [nameof(EventEmail.Intro)] = PlainTextEmailComposer.CantMakeAnyTimeIntro(ev, who),
+            [nameof(EventEmail.ActionUrl)] = dashboardUrl,
+            [nameof(EventEmail.ActionLabel)] = "See everyone's answers",
+            [nameof(EventEmail.Closing)] = PlainTextEmailComposer.CantMakeAnyTimeClosing(ev, who),
         });
 
     public Task<ComposedEmail> AllRespondedAsync(SchedulingEvent ev, string dashboardUrl) =>
