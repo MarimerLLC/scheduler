@@ -651,6 +651,16 @@ actions pass the version the page shows, so a change made meanwhile by an agent 
 with a message rather than overwritten. Scaling past one replica would need sticky sessions and a backplane
 for that notifier.
 
+**Feedback on actions.** Every page says how something the person just did turned out (a vote saved, a time
+picked, a token created, a refusal) the same way: one `StatusNotice` near the top of the page's content, green with
+a check for success and red for an error (also an ARIA alert). It sticks to the top of the window while the page
+scrolls, so it is seen even when the button was far down the page, and stays until dismissed or replaced; it never
+times out. Each outcome is a new `Notice`, so doing the same thing twice shows the notice arriving again. On the
+voting page it comes before the organizer's details, which can be long. Static pages render the close button hidden
+and `app.js` shows and handles it, so without JavaScript there is no close button. Whole-page outcomes that replace
+the form (signed in, unsubscribed, address confirmed) stay as the page's own text. Optional email confirmation of a
+saved vote is a separate question (issue 40).
+
 ## Email
 
 Outbound only. Nothing parses inbound mail.

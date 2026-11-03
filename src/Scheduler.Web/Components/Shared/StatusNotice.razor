@@ -1,0 +1,35 @@
+@* The one way every page says how something the person just did turned out: green with a check for success, red for
+   an error. One per page, placed near the top of the page's content; it sticks to the top of the window while the
+   page scrolls, so the outcome is seen even when the button was far down. It stays until dismissed or replaced
+   (nothing times out, so nobody misses it).
+
+   The live region is always rendered, so a screen reader announces a notice added to an interactive page; an error
+   is also an alert. Interactive pages pass OnDismiss. Static pages (form posts) don't: their close button is hidden
+   until app.js shows it and handles it, so without JavaScript there is simply no close button. See docs/design.md,
+   "Web UI". *@
+
+<div class="notice-region" aria-live="polite" aria-atomic="true">
+    @if (Value is not null)
+    {
+        <div @key="Value" id="notice" class="notice notice-@(Value.IsError ? "error" : "success")" role="@(Value.IsError ? "alert" : null)">
+            <span class="notice-icon" aria-hidden="true">@(Value.IsError ? "!" : "✓")</span>
+            <span class="notice-text">@Value.Text</span>
+            @if (OnDismiss.HasDelegate)
+            {
+                <button type="button" class="notice-dismiss" aria-label="Dismiss" @onclick="OnDismiss">×</button>
+            }
+            else
+            {
+                <button type="button" class="notice-dismiss" aria-label="Dismiss" data-notice-dismiss hidden>×</button>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    /// <summary>The notice to show, or null for none.</summary>
+    [Parameter] public Notice? Value { get; set; }
+
+    /// <summary>Clears the notice on an interactive page (set it to null).</summary>
+    [Parameter] public EventCallback OnDismiss { get; set; }
+}

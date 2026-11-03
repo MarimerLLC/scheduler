@@ -15,6 +15,8 @@
 
 <h1>Ask to organize</h1>
 
+<StatusNotice Value="_notice" OnDismiss="() => _notice = null" />
+
 @if (_loading)
 {
     <p>Loading…</p>
@@ -66,11 +68,6 @@ else
         </label>
         <button type="submit" disabled="@_busy">Send request</button>
     </EditForm>
-
-    @if (_error is not null)
-    {
-        <p class="message error" role="status">@_error</p>
-    }
 }
 
 @code {
@@ -87,7 +84,7 @@ else
     private CallerAccess? _access;
     private bool _loading = true;
     private bool _busy;
-    private string? _error;
+    private Notice? _notice;
 
     protected override async Task OnInitializedAsync()
     {
@@ -111,12 +108,12 @@ else
         try
         {
             await Admin.RequestToOrganizeAsync(_caller!, _form.Email, _form.Note, CancellationToken.None);
-            _error = null;
+            _notice = Notice.Success("Sent your request to the admins.");
             _access = await Admin.GetAccessAsync(_caller!, CancellationToken.None);
         }
         catch (SchedulingException ex)
         {
-            _error = ex.Message;
+            _notice = Notice.Error(ex.Message);
         }
         finally
         {

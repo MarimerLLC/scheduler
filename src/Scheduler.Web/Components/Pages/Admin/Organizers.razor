@@ -28,10 +28,7 @@ else if (_access is not { IsAdmin: true })
 }
 else
 {
-    @if (_message is not null)
-    {
-        <p class="@(_isError ? "message error" : "message")" role="status">@_message</p>
-    }
+    <StatusNotice Value="_notice" OnDismiss="() => _notice = null" />
 
     <h2>Requests to organize</h2>
     @if (_requests.Count == 0)
@@ -143,8 +140,7 @@ else
     private bool _busy;
     private string? _confirmRemove;
     private Guid? _confirmDecline;
-    private string? _message;
-    private bool _isError;
+    private Notice? _notice;
 
     protected override async Task OnInitializedAsync()
     {
@@ -212,13 +208,11 @@ else
         _busy = true;
         try
         {
-            _message = await action();
-            _isError = false;
+            _notice = Notice.Success(await action());
         }
         catch (SchedulingException ex)
         {
-            _message = ex.Message;
-            _isError = true;
+            _notice = Notice.Error(ex.Message);
         }
         finally
         {

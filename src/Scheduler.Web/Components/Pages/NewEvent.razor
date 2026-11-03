@@ -19,6 +19,8 @@
 
 <h1>New event</h1>
 
+<StatusNotice Value="_notice" OnDismiss="() => _notice = null" />
+
 @if (_loading)
 {
     <p>Loading…</p>
@@ -44,7 +46,6 @@ else if (_access is not { CanOrganize: true })
 }
 else if (_created is not null)
 {
-    <p class="message" role="status">Invitations to <strong>@_created.Title</strong> are on their way to @_created.Participants.Count people.</p>
     @foreach (var notice in _created.Notices ?? [])
     {
         <p class="message">@notice</p>
@@ -129,11 +130,6 @@ else
             <input type="datetime-local" value="@_respondBy" @onchange="e => _respondBy = e.Value?.ToString()" />
         </label>
 
-        @if (_error is not null)
-        {
-            <p class="message error" role="alert">@_error</p>
-        }
-
         <button disabled="@_busy" @onclick="SendAsync">Send invitations</button>
     </div>
 }
@@ -154,7 +150,7 @@ else
     private CallerAccess? _access;
     private bool _loading = true;
     private bool _busy;
-    private string? _error;
+    private Notice? _notice;
     private EventView? _created;
 
     private string? _title;
@@ -206,7 +202,7 @@ else
     private async Task SendAsync()
     {
         _busy = true;
-        _error = null;
+        _notice = null;
         try
         {
             var zone = _zone?.Trim() ?? "";
@@ -222,10 +218,11 @@ else
                 string.IsNullOrWhiteSpace(_respondBy) ? null : _respondBy,
                 _organizerName);
             _created = await Scheduling.CreateEventAsync(_caller!, request, CancellationToken.None);
+            _notice = Notice.Success($"Invitations to {_created.Title} are on their way to {_created.Participants.Count} people.");
         }
         catch (SchedulingException ex)
         {
-            _error = ex.Message;
+            _notice = Notice.Error(ex.Message);
         }
         finally
         {
@@ -236,6 +233,7 @@ else
     private void Reset()
     {
         _created = null;
+        _notice = null;
         _title = _description = _respondBy = null;
         _slots.Clear();
         _slots.AddRange([string.Empty, string.Empty, string.Empty]);
