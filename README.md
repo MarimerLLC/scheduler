@@ -33,6 +33,9 @@ invitation email.
 Version 1 is complete (roadmap steps 1 to 5 in the design doc) and runs in production:
 
 - MCP endpoint (`/mcp`) with every tool, both prompts and the server instructions
+- MCP input requests (MRTR): `create_event` and `cancel_event` ask the user, through a client that supports them,
+  for a missing cancel reason, invite list, candidate times, time zone or title, and offer once to add a
+  description to a very short title
 - Sign-in: Microsoft and Google for the browser, OAuth for MCP clients (this app is its own authorization
   server, federating to the same providers), personal access tokens for headless agents such as RockBot, and
   an emailed link for addresses a provider doesn't verify
@@ -56,7 +59,7 @@ invite for organizers without a calendar MCP server.
 | `src/Scheduler.AppHost` | Aspire AppHost for local development (PostgreSQL + Mailpit) |
 | `tests/Scheduler.Core.Tests` | MSTest unit tests for the domain rules |
 | `tests/Scheduler.Data.Tests` | Integration tests for `SchedulingService` against PostgreSQL (Testcontainers) |
-| `tests/Scheduler.Web.Tests` | The MCP OAuth flow end to end with the MCP SDK client, the organizer pages (prerendered), the voting page, HTML emails and unsubscribing, emailed sign-in and address links, rate limits, plus the identity rules |
+| `tests/Scheduler.Web.Tests` | The MCP OAuth flow end to end with the MCP SDK client, MRTR input requests, the organizer pages (prerendered), the voting page, HTML emails and unsubscribing, emailed sign-in and address links, rate limits, plus the identity rules |
 | `docs/design.md` | Design document |
 | `docs/identity-setup.md` | Operations: Microsoft and Google app registrations, token certificates, Kubernetes settings |
 | `docs/deployment.md` | Operations: deploying to `lhotkalake` (database, SMTP relay and DNS, secrets, build and deploy, checks) |

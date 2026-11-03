@@ -24,6 +24,12 @@ internal static class SchedulerMcpOptions
            finalize_event, create the meeting in the user's own calendar using the returned local start and
            time zone, then call record_calendar_event.
 
+        Questions from the server: if create_event or cancel_event is missing something (a cancel reason, the
+        invite list, candidate times, a time zone, a title, or a description for a very short title), a client
+        that supports MCP input requests (MRTR) gets a question in the middle of the call. Answer it from what
+        the user already told you, or ask the user; never make up an answer. A description can be skipped;
+        anything else left unanswered stops the call and nothing changes.
+
         Answering a request (the user was invited):
         1. Call list_my_events; by default it returns the events waiting for the user's vote.
         2. For each, check every slot against the user's calendar and confirm the answers with the user.
