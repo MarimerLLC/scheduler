@@ -12,8 +12,14 @@ internal sealed class SubscriptionOptions
     /// </summary>
     public double StreamMinutes { get; set; } = 25;
 
-    /// <summary>Open listen streams per caller (account, or address).</summary>
+    /// <summary>Open listen streams per caller (account, or address) that watch at least one event.</summary>
     public int MaxStreamsPerCaller { get; set; } = 5;
+
+    /// <summary>
+    /// Open listen streams per caller that watch nothing. Claude Code holds one per connected session (it asks only
+    /// for list_changed), so this is larger; they do no work but each holds a request open.
+    /// </summary>
+    public int MaxIdleStreamsPerCaller { get; set; } = 20;
 
     /// <summary>Resource URIs one listen stream may ask for.</summary>
     public int MaxUrisPerStream { get; set; } = 50;

@@ -576,7 +576,8 @@ side, RockBot's MCP bridge, is [MarimerLLC/rockbot#768](https://github.com/Marim
      `everyoneResponded` and `rulesOutEveryTime` (who), because participants never see others' response
      status or votes ([Who sees what](#who-sees-what)). A participant's status therefore moves only on state,
      deadline or finalized-slot changes, never on someone else's vote.
-   - **Marker.** `marker` is the first 16 hex digits of a SHA-256 over those fields. It changes exactly when
+   - **Marker.** `marker` is the first 16 hex digits of a SHA-256 over those fields (the deadline as its
+     exact instant, since the display text drops seconds). It changes exactly when
      one of them does, and it is deterministic, so a client can compare it with the last one it saw, also
      across reconnects and restarts.
 3. The client opens one long-lived `subscriptions/listen` request listing the URIs it watches. A custom
@@ -584,16 +585,18 @@ side, RockBot's MCP bridge, is [MarimerLLC/rockbot#768](https://github.com/Marim
    session channel for unsolicited notifications, but the listen request's own response stream can carry them;
    the SDK documents this handler for that case. The handler:
    - refuses a caller who isn't signed in, and a request for more than `MaxUrisPerStream` (50) URIs;
-   - refuses a caller who already has `MaxStreamsPerCaller` (5) streams open that watch something (per
-     account, or per address);
+   - refuses a caller who already has `MaxStreamsPerCaller` (5) streams open that watch something, or
+     `MaxIdleStreamsPerCaller` (20) that watch nothing (per account, or per address). The slot is taken before
+     any reads, and a stream whose URIs all turn out unreadable moves to an idle slot;
    - acknowledges (`notifications/subscriptions/acknowledged`) only the URIs the caller can read right now.
      Malformed URIs, events the caller isn't part of and missing events are left out. `*ListChanged` requests
      are never honored, so they are left out too;
-   - keeps a stream that watches nothing open, idle, until its lifetime ends, without taking one of the
-     caller's slots. Claude Code opens such a stream on every connection (it asks only for `list_changed`),
-     and retries a few times, seconds apart, when the stream ends right away;
+   - keeps a stream that watches nothing open, idle, until its lifetime ends. Claude Code opens such a stream
+     on every connection (it asks only for `list_changed`), and retries a few times, seconds apart, when the
+     stream ends right away;
    - forwards `IEventChanges` for those events as `notifications/resources/updated`: an event URI on every
-     change, a status URI only when its marker moved. Every notification, the acknowledgement included,
+     change, a status URI only when its marker moved. Changes waiting to be sent are kept as a set of events,
+     so however busy one event is, another's change is never dropped. Every notification, the acknowledgement included,
      carries `_meta["io.modelcontextprotocol/subscriptionId"]`, the listen request's id;
    - stops notifying about an event the caller can no longer read (removed from it, or purged);
    - ends the stream itself after `StreamMinutes` (25) with an empty result, and ends when the client
@@ -605,8 +608,8 @@ directly would race its writer. Instead the server ends each stream after `Sched
 and the client reconnects, which also refreshes its bearer token. The value has to stay below the idle cutoff
 of whatever sits between client and server (the Tailscale Funnel, below), since a quiet stream sends nothing.
 
-Settings, under `Scheduler:Subscriptions`: `StreamMinutes` (25), `MaxStreamsPerCaller` (5), `MaxUrisPerStream`
-(50). Clients on protocol revisions before 2026-07-28 get method-not-found for `subscriptions/listen` (the SDK
+Settings, under `Scheduler:Subscriptions`: `StreamMinutes` (25), `MaxStreamsPerCaller` (5),
+`MaxIdleStreamsPerCaller` (20), `MaxUrisPerStream` (50). Clients on protocol revisions before 2026-07-28 get method-not-found for `subscriptions/listen` (the SDK
 gates it) and keep using tools and email; they can still read the resources.
 
 The subscription is just the open stream; the server stores nothing for it. After a restart (every deploy)

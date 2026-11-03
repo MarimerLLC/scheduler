@@ -3,6 +3,8 @@ using System.Threading.Channels;
 using ModelContextProtocol;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
+using Microsoft.Extensions.DependencyInjection;
+using Scheduler.Core.Services;
 using Scheduler.Web.Identity;
 
 namespace Scheduler.Web.Tests;
@@ -152,6 +154,49 @@ public sealed class McpSubscriptionTests
     }
 
     [TestMethod]
+    public async Task Streams_that_watch_nothing_have_their_own_limit()
+    {
+        await _app.DisposeAsync();
+        _app = new SchedulerApp(("Scheduler:Subscriptions:MaxIdleStreamsPerCaller", "2"));
+        await using var organizer = await ConnectAsync(Organizer);
+        var ev = await CreateAsync(organizer);
+        var listeners = new List<Listener>();
+        try
+        {
+            listeners.Add(await Listener.OpenAsync(organizer));
+            listeners.Add(await Listener.OpenAsync(organizer, "scheduler://events/NOSUCHEV"));
+
+            var refused = await Assert.ThrowsAsync<McpProtocolException>(() => Listener.OpenAsync(organizer));
+            StringAssert.Contains(refused.Message, "2 listen streams open that watch nothing");
+            listeners.Add(await Listener.OpenAsync(organizer, EventUri(ev.ShortCode)));
+        }
+        finally
+        {
+            foreach (var listener in listeners)
+                await listener.DisposeAsync();
+        }
+    }
+
+    [TestMethod]
+    public async Task A_busy_event_does_not_crowd_out_another_events_change()
+    {
+        await using var organizer = await ConnectAsync(Organizer);
+        var quiet = await CreateAsync(organizer);
+        var busy = await CreateAsync(organizer);
+        await using var listener = await Listener.OpenAsync(organizer, EventUri(quiet.ShortCode), EventUri(busy.ShortCode));
+
+        var changes = _app.Services.GetRequiredService<IEventChanges>();
+        changes.Publish(quiet.Id);
+        for (var i = 0; i < 1000; i++)
+            changes.Publish(busy.Id);
+        var seen = new HashSet<string>();
+        while (seen.Count < 2)
+            seen.Add(UriOf(await listener.NextAsync()));
+
+        CollectionAssert.AreEquivalent(new[] { EventUri(quiet.ShortCode), EventUri(busy.ShortCode) }, seen.ToArray());
+    }
+
+    [TestMethod]
     public async Task A_stream_may_watch_at_most_fifty_resources()
     {
         await using var organizer = await ConnectAsync(Organizer);
@@ -215,7 +260,7 @@ public sealed class McpSubscriptionTests
 
     // ── Helpers ─────────────────────────────────────────────────────────────
 
-    private sealed record CreatedEvent(string ShortCode, string SlotId);
+    private sealed record CreatedEvent(Guid Id, string ShortCode, string SlotId);
 
     private static string EventUri(string shortCode) => $"scheduler://events/{shortCode}";
 
@@ -251,6 +296,7 @@ public sealed class McpSubscriptionTests
         Assert.IsFalse(result.IsError ?? false, text);
         using var ev = JsonDocument.Parse(text);
         return new CreatedEvent(
+            ev.RootElement.GetProperty("id").GetGuid(),
             ev.RootElement.GetProperty("shortCode").GetString()!,
             ev.RootElement.GetProperty("slots")[0].GetProperty("slotId").GetString()!);
     }

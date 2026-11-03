@@ -115,6 +115,20 @@ public sealed class EventStatusTests
     }
 
     [TestMethod]
+    public async Task The_marker_moves_when_the_deadline_moves_by_seconds()
+    {
+        var ev = await _h.CreateAsync();
+        var before = await StatusAsync(Harness.Bob, ev);
+
+        await _h.Service.ProposeMoreSlotsAsync(Harness.Rocky, ev.ShortCode, [new("2026-11-06T10:00", "America/Chicago")],
+            "2026-10-30T17:00:30", ev.Version, None);
+        var after = await StatusAsync(Harness.Bob, ev);
+
+        Assert.AreEqual(before.RespondBy, after.RespondBy, "the display text has no seconds");
+        Assert.AreNotEqual(before.Marker, after.Marker);
+    }
+
+    [TestMethod]
     public async Task The_marker_is_the_same_on_every_read()
     {
         var ev = await _h.CreateAsync();

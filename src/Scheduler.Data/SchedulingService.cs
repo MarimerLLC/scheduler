@@ -829,7 +829,8 @@ public sealed class SchedulingService(
 
         var fields = string.Join('\n',
             ev.State.ToString(),
-            respondBy ?? "",
+            // The exact instant, not the display text, which drops seconds a deadline may have.
+            ev.RespondBy is { } deadline ? SlotTimeFormatter.Utc(deadline) : "",
             ev.FinalizedSlotId?.ToString() ?? "",
             isOrganizer ? "organizer" : "participant",
             everyoneResponded?.ToString() ?? "",
