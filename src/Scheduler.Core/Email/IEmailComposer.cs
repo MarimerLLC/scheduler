@@ -21,6 +21,11 @@ public interface IEmailComposer
 
     Task<ComposedEmail> NewSlotsAsync(SchedulingEvent ev, Participant recipient, string votingUrl, IReadOnlyList<ProposedSlot> newSlots, bool rescheduling);
 
+    /// <summary>
+    /// To a participant who asked for it when voting: a copy of their answer to every current time, and their note.
+    /// </summary>
+    Task<ComposedEmail> VoteReceiptAsync(SchedulingEvent ev, Participant recipient, string votingUrl);
+
     Task<ComposedEmail> FinalizedAsync(SchedulingEvent ev, Participant recipient, ProposedSlot slot);
 
     /// <summary>

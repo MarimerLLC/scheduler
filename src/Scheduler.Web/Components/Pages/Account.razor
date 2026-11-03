@@ -29,6 +29,8 @@ else if (_caller is null)
 }
 else
 {
+    <StatusNotice Value="_notice" OnDismiss="() => _notice = null" />
+
     <h2>Addresses</h2>
 
     <p>Invitations to any of these addresses can be answered from this account, and by agents connected as you.</p>
@@ -71,11 +73,6 @@ else
         <button type="submit" disabled="@_busy">Send confirmation link</button>
     </EditForm>
 
-    @if (_addressMessage is not null)
-    {
-        <p class="@(_addressIsError ? "message error" : "message")" role="status">@_addressMessage</p>
-    }
-
     <h2>Personal access tokens</h2>
 
     <p>
@@ -114,11 +111,6 @@ else
         </label>
         <button type="submit" disabled="@_busy">Create token</button>
     </EditForm>
-
-    @if (_message is not null)
-    {
-        <p class="@(_isError ? "message error" : "message")" role="status">@_message</p>
-    }
 
     @if (_tokens.Count == 0)
     {
@@ -181,15 +173,12 @@ else
     private CallerIdentity? _caller;
     private IReadOnlyList<AccountAddressView> _addresses = [];
     private string? _confirmRemove;
-    private string? _addressMessage;
-    private bool _addressIsError;
     private IReadOnlyList<AccessTokenView> _tokens = [];
     private CreatedAccessToken? _created;
     private bool _loading = true;
     private bool _busy;
     private Guid? _confirmRevoke;
-    private string? _message;
-    private bool _isError;
+    private Notice? _notice;
 
     private string McpUrl => Navigation.ToAbsoluteUri(McpResource.Path).AbsoluteUri;
 
@@ -254,14 +243,12 @@ else
         _busy = true;
         try
         {
-            _addressMessage = await action();
-            _addressIsError = false;
+            _notice = Notice.Success(await action());
             _addresses = await Accounts.ListAddressesAsync(_caller!, CancellationToken.None);
         }
         catch (SchedulingException ex)
         {
-            _addressMessage = ex.Message;
-            _addressIsError = true;
+            _notice = Notice.Error(ex.Message);
         }
         finally
         {
@@ -275,14 +262,12 @@ else
         _busy = true;
         try
         {
-            _message = await action();
-            _isError = false;
+            _notice = Notice.Success(await action());
             _tokens = await Tokens.ListAsync(_caller!, CancellationToken.None);
         }
         catch (SchedulingException ex)
         {
-            _message = ex.Message;
-            _isError = true;
+            _notice = Notice.Error(ex.Message);
         }
         finally
         {

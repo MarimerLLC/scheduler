@@ -1,4 +1,6 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using NodaTime;
 using Scheduler.Core;
 using Scheduler.Core.Model;
 using Scheduler.Core.Services;
@@ -133,16 +135,100 @@ public sealed class VotingTests
         outbox.Where(o => o.Subject.Contains("can't make any time", StringComparison.Ordinal)).ToList();
 
     [TestMethod]
+    public async Task AVoterCanAskForACopyOfTheirAnswers()
+    {
+        var ev = await _h.CreateAsync();
+
+        await _h.VoteAsync(Harness.Bob, ev, (0, VoteValue.Yes));
+        Assert.IsFalse((await _h.OutboxAsync()).Any(o => o.To == "bob@example.com" && o.Subject.Contains("Your answers", StringComparison.Ordinal)),
+            "no copy unless asked");
+
+        var view = await _h.Service.VoteAsync(Harness.Bob, ev.ShortCode,
+            [new(ev.Slots[0].SlotId, VoteValue.Preferred), new(ev.Slots[2].SlotId, VoteValue.IfNecessary)],
+            "Mornings are hard", emailReceipt: true, CancellationToken.None);
+
+        CollectionAssert.AreEqual(new[] { "A copy of your answers is on its way to bob@example.com." }, view.Notices!.ToList());
+
+        var receipt = (await _h.OutboxAsync()).Single(o => o.Subject.Contains("Your answers", StringComparison.Ordinal));
+        Assert.AreEqual("bob@example.com", receipt.To);
+        Assert.AreEqual($"[sched:{ev.ShortCode}] Your answers: Planning", receipt.Subject);
+        Assert.AreEqual("rocky@example.com", receipt.ReplyTo);
+        StringAssert.Contains(receipt.TextBody, $"{ev.Slots[0].OrganizerLocal}: Preferred");
+        StringAssert.Contains(receipt.TextBody, $"{ev.Slots[1].OrganizerLocal}: Not answered");
+        StringAssert.Contains(receipt.TextBody, $"{ev.Slots[2].OrganizerLocal}: If necessary");
+        StringAssert.Contains(receipt.TextBody, "  > Mornings are hard");
+        StringAssert.Contains(receipt.TextBody, $"{Harness.BaseUrl}/e/{ev.ShortCode}?t=");
+        var audit = (await _h.AuditAsync()).Last(a => a.Action == "vote.cast");
+        Assert.AreEqual("bob@example.com", JsonDocument.Parse(audit.Detail!).RootElement.GetProperty("receipt")[0].GetString());
+    }
+
+    [TestMethod]
+    public async Task ARetryThatChangesNothingDoesntSendASecondCopy()
+    {
+        var ev = await _h.CreateAsync();
+
+        await ReceiptVoteAsync(ev, VoteValue.Yes, "Either works");
+        var retry = await ReceiptVoteAsync(ev, VoteValue.Yes, "Either works");
+
+        Assert.HasCount(1, await ReceiptsAsync());
+        StringAssert.Contains(retry.Notices!.Single(), "a few minutes ago, so another wasn't sent");
+        Assert.AreEqual(VoteValue.Yes, retry.Slots[0].MyVote, "the vote itself still applies");
+    }
+
+    [TestMethod]
+    public async Task ChangedAnswersOrALaterAskSendAnotherCopy()
+    {
+        var ev = await _h.CreateAsync();
+
+        await ReceiptVoteAsync(ev, VoteValue.Yes, null);
+        await ReceiptVoteAsync(ev, VoteValue.No, null);
+        await ReceiptVoteAsync(ev, VoteValue.No, "Sorry");
+        _h.Clock.Advance(Duration.FromMinutes(11));
+        await ReceiptVoteAsync(ev, VoteValue.No, "Sorry");
+
+        var receipts = await ReceiptsAsync();
+        Assert.HasCount(4, receipts);
+        StringAssert.Contains(receipts[1].TextBody, ": No");
+        StringAssert.Contains(receipts[2].TextBody, "  > Sorry");
+    }
+
+    [TestMethod]
+    public async Task NoCopyGoesToAnAddressThatTakesNoEmail()
+    {
+        var ev = await _h.CreateAsync();
+        await using (var db = await _h.Db.CreateDbContextAsync())
+        {
+            db.Suppressions.Add(new EmailSuppression { Email = "bob@example.com", Reason = SuppressionReason.Unsubscribed, At = _h.Clock.GetCurrentInstant() });
+            db.Suppressions.Add(new EmailSuppression { Email = "carol@example.com", Reason = SuppressionReason.Bounced, At = _h.Clock.GetCurrentInstant() });
+            await db.SaveChangesAsync();
+        }
+
+        var bob = await ReceiptVoteAsync(ev, VoteValue.Yes, null);
+        var carol = await _h.Service.VoteAsync(Harness.Carol, ev.ShortCode, [new(ev.Slots[0].SlotId, VoteValue.Yes)], null, emailReceipt: true, CancellationToken.None);
+
+        Assert.IsEmpty(await ReceiptsAsync());
+        StringAssert.Contains(bob.Notices!.Single(), "bob@example.com has asked this server not to email it, so no copy of your answers was sent.");
+        StringAssert.Contains(carol.Notices!.Single(), "Email to carol@example.com has bounced before, so no copy of your answers was sent.");
+        Assert.AreEqual(VoteValue.Yes, bob.Slots[0].MyVote, "the answers are still saved");
+    }
+
+    private Task<EventView> ReceiptVoteAsync(EventView ev, VoteValue value, string? note) =>
+        _h.Service.VoteAsync(Harness.Bob, ev.ShortCode, [new(ev.Slots[0].SlotId, value)], note, emailReceipt: true, CancellationToken.None);
+
+    private async Task<List<OutboxEmail>> ReceiptsAsync() =>
+        (await _h.OutboxAsync()).Where(o => o.Subject.Contains("Your answers", StringComparison.Ordinal)).ToList();
+
+    [TestMethod]
     public async Task UnknownAndRepeatedSlotsAreRejected()
     {
         var ev = await _h.CreateAsync();
 
         await Assert.ThrowsExactlyAsync<SchedulingValidationException>(() => _h.Service.VoteAsync(
-            Harness.Bob, ev.ShortCode, [new(Guid.NewGuid(), VoteValue.Preferred)], null, CancellationToken.None));
+            Harness.Bob, ev.ShortCode, [new(Guid.NewGuid(), VoteValue.Preferred)], null, emailReceipt: false, CancellationToken.None));
         await Assert.ThrowsExactlyAsync<SchedulingValidationException>(() => _h.VoteAsync(
             Harness.Bob, ev, (0, VoteValue.Preferred), (0, VoteValue.No)));
         await Assert.ThrowsExactlyAsync<SchedulingValidationException>(() => _h.Service.VoteAsync(
-            Harness.Bob, ev.ShortCode, [], null, CancellationToken.None));
+            Harness.Bob, ev.ShortCode, [], null, emailReceipt: false, CancellationToken.None));
     }
 
     [TestMethod]
@@ -169,9 +255,9 @@ public sealed class VotingTests
         var ev = await _h.CreateAsync();
         var slot = ev.Slots[0].SlotId;
 
-        await _h.Service.VoteAsync(Harness.Bob, ev.ShortCode, [new(slot, VoteValue.IfNecessary)], "Mornings are hard", CancellationToken.None);
-        var kept = await _h.Service.VoteAsync(Harness.Bob, ev.ShortCode, [new(slot, VoteValue.No)], null, CancellationToken.None);
-        var cleared = await _h.Service.VoteAsync(Harness.Bob, ev.ShortCode, [new(slot, VoteValue.No)], "", CancellationToken.None);
+        await _h.Service.VoteAsync(Harness.Bob, ev.ShortCode, [new(slot, VoteValue.IfNecessary)], "Mornings are hard", emailReceipt: false, CancellationToken.None);
+        var kept = await _h.Service.VoteAsync(Harness.Bob, ev.ShortCode, [new(slot, VoteValue.No)], null, emailReceipt: false, CancellationToken.None);
+        var cleared = await _h.Service.VoteAsync(Harness.Bob, ev.ShortCode, [new(slot, VoteValue.No)], "", emailReceipt: false, CancellationToken.None);
 
         Assert.AreEqual("Mornings are hard", kept.Participants.Single(p => p.Email == "bob@example.com").Note);
         Assert.IsNull(cleared.Participants.Single(p => p.Email == "bob@example.com").Note);

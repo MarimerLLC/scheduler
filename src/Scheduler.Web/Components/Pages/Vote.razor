@@ -32,19 +32,13 @@ else if (_event is not null)
         Event <code>@_event.ShortCode</code>.
     </p>
 
+    @* Above the organizer's details, which can be long: after saving, the outcome is the first thing on the page. *@
+    <StatusNotice Value="_notice" />
+
     @if (!string.IsNullOrWhiteSpace(_event.Description))
     {
         <p class="hint">Details from the organizer:</p>
         <blockquote class="organizer-text">@_event.Description</blockquote>
-    }
-
-    @if (_saved)
-    {
-        <p class="message" role="status">Thanks, your answers are saved. You can change them here until the organizer picks a time.</p>
-    }
-    @if (_error is not null)
-    {
-        <p class="message error" role="alert">@_error</p>
     }
 
     @switch (_event.State)
@@ -108,6 +102,11 @@ else if (_event is not null)
                 <textarea name="note" maxlength="@FieldLimits.NoteMax" rows="3">@MyNote</textarea>
             </label>
 
+            <label class="receipt">
+                <input type="checkbox" name="receipt" />
+                Email me a copy of my answers
+            </label>
+
             <button type="submit">Save my answers</button>
         </form>
     }
@@ -145,8 +144,7 @@ else if (_event is not null)
     private CallerIdentity? _caller;
     private EventView? _event;
     private string? _problem;
-    private string? _error;
-    private bool _saved;
+    private Notice? _notice;
 
     private string EventPath => "/e/" + Uri.EscapeDataString(Code);
 
@@ -201,6 +199,7 @@ else if (_event is not null)
             return;
 
         var form = HttpContext.Request.Form;
+        var emailReceipt = form["receipt"] == "on";
         var votes = new List<VoteInput>();
         foreach (var slot in _event.Slots)
         {
@@ -209,18 +208,20 @@ else if (_event is not null)
         }
         if (votes.Count == 0)
         {
-            _error = "Choose an answer for at least one time.";
+            _notice = Notice.Error("Choose an answer for at least one time.");
             return;
         }
 
         try
         {
-            _event = await Scheduling.VoteAsync(_caller, Code, votes, form["note"].ToString(), CancellationToken.None);
-            _saved = true;
+            _event = await Scheduling.VoteAsync(_caller, Code, votes, form["note"].ToString(), emailReceipt, CancellationToken.None);
+            // With a copy asked for, the notices say where it went or why it didn't (unsubscribed, a retry).
+            _notice = Notice.Success(string.Join(" ",
+                ["Thanks, your answers are saved.", .. _event.Notices ?? [], "You can change them here until the organizer picks a time."]));
         }
         catch (SchedulingException ex)
         {
-            _error = ex.Message;
+            _notice = Notice.Error(ex.Message);
         }
     }
 
