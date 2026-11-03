@@ -455,7 +455,8 @@ answers 401 rather than redirecting an MCP client to a sign-in page.
 Streamable HTTP at `/mcp`, MCP C# SDK 2.2.0, protocol 2026-07-28. The transport is stateless: no tool
 needs a server-to-client request or session state, so any replica can serve any call. When a tool needs
 something from the user, it asks with an MRTR input request (see [Asking for what's missing](#asking-for-whats-missing)),
-which ends the call rather than holding it open.
+which ends the call rather than holding it open. The one long-lived request is `subscriptions/listen` (see
+[Push updates](#push-updates-subscriptions-instead-of-tasks)), which carries its own notifications.
 
 ### Server instructions
 
@@ -535,79 +536,91 @@ server's entry so free-text questions reach the agent, which answers from its co
 
 Prompts name no specific calendar tool, because the server can't know which one a client has.
 
-### MCP Tasks (optional, v1.1)
+### Push updates: subscriptions instead of tasks
 
-MCP Tasks (the 2026-07-28 Tasks extension) are for tool calls that take minutes: the server keeps the work
-in a task store and the client polls. None of the tools above runs long; the long-lived thing is the
-*event*, whose ID already lets people pick it up again in later sessions. A session-based client can't sit
-on a multi-day task anyway. **Clients must never need Tasks.**
+An organizer's agent wants to know when something happens to an event without polling or waiting for email.
+None of the tools runs long; the long-lived thing is the *event*, whose shortCode already lets any agent pick
+it up in a later session, and the organizer emails ("everyone has answered", "a required person can't make
+any time") already say when to come back. **Clients must never need push**: every client keeps working with
+tools and email.
 
-Re-evaluated on 2026-11-03 against SDK 2.2.0's `ModelContextProtocol.Extensions.Tasks` and RockBot's task
-support (RockBot `docs/tools.md`, "Background tasks"). The decision stands: no scheduling task, one optional
-waiting tool, low priority. Its main value beyond RockBot is as a clean example of where Tasks fit: the
-long-lived event is a resource with a handle, the bounded wait is the task, and questions to the user are
-MRTR.
+For clients that want it, the server pushes changes with **MCP resource subscriptions over
+`subscriptions/listen`** (SEP-2575, protocol 2026-07-28). Decided 2026-11-03, replacing the earlier plan for
+a `wait_for_update` MCP task. Tracked in [#36](https://github.com/MarimerLLC/scheduler/issues/36); the client
+side, RockBot's MCP bridge, is [MarimerLLC/rockbot#768](https://github.com/MarimerLLC/rockbot/issues/768).
 
-#### Why scheduling itself isn't a task
+#### How it works
 
-A task is one tool call whose *server-side work* takes a while. Scheduling takes days because people are
-slow; the server sits idle, and the ending (finalizing) is the organizer's decision, not work the server
-finishes. Making `create_event` a task that completes at finalize would run into these problems:
+1. Each event is a resource, `scheduler://events/{shortCode}`. Reading it returns what `get_event` returns,
+   with the same authorization (the organizer and participants only), through `ISchedulingService`.
+2. A second resource, `scheduler://events/{shortCode}/status`, changes only at **milestones**: every required
+   participant has voted, a required participant rules out every time, the deadline passes, or the event is
+   finalized, reopened or cancelled. Those are the moments the organizer emails mark. Watching it instead of
+   the event resource means one wake-up per milestone, not per vote. Its content carries a change marker; the
+   event `Version` can't serve, because votes never touch the event row.
+3. The client opens one long-lived `subscriptions/listen` request listing the URIs it watches. A custom
+   `SubscriptionsListenHandler` owns that stream. The server is stateless, so it has no session channel for
+   unsolicited notifications, but the listen request's own response stream can carry them; the SDK documents
+   this handler for that case. The handler:
+   - acknowledges (`subscriptions/acknowledged`) only the URIs the caller may read;
+   - forwards `IEventChanges` for those events as `notifications/resources/updated`, tagged with the
+     subscription id;
+   - sends keepalives;
+   - ends when the client cancels or disconnects;
+   - limits streams per caller and URIs per stream.
+4. A notification carries only the URI. The client reads the resource again to see what changed.
+
+The subscription is just the open stream; the server stores nothing for it. After a restart (every deploy)
+the client reconnects, subscribes again, and re-reads what it watches to catch anything it missed.
+
+Constraints:
+
+- **Single replica.** `IEventChanges` only works within one process; the live pages already require that.
+- **Token lifetime.** The bearer token is checked when the stream opens. Clients reconnect to refresh it.
+- **Tailscale Funnel.** Clients outside the cluster, RockBot included, connect through the Funnel. Before
+  building, confirm that a stream held open for hours (idle except for keepalives) survives it. If the Funnel
+  caps how long a connection lasts, clients reconnect on a schedule, which the design already tolerates.
+- **Who benefits.** Only clients that support `subscriptions/listen`: RockBot once #768 lands. Everyone else
+  relies on email.
+
+#### Why not MCP Tasks
+
+Evaluated on 2026-11-03 against SDK 2.2.0's `ModelContextProtocol.Extensions.Tasks` and RockBot's task support
+(RockBot `docs/tools.md`, "Background tasks"). A task is one tool call whose *server-side work* takes a while.
+Scheduling takes days because people are slow; the server sits idle, and the ending (finalizing) is the
+organizer's decision, not work the server finishes.
+
+**Scheduling as a task** (`create_event` completing at finalize) fails on every count:
 
 - **The work runs in process.** The SDK runs a task's tool handler in the background until it returns. A
   durable store keeps the task *record*, but a restart kills the handler, and the single replica restarts on
   every deploy.
 - **RockBot's limits.** `taskTimeoutMinutes` defaults to 60 (`McpBridge:DefaultTaskTimeoutMinutes`), with
-  `McpBridge:MaxTasksPerSession` 3 and `McpBridge:MaxTasks` 20. A multi-day task times out, and it holds a
-  slot for each event. Wisps, workers, scheduled tasks and patrols never get tasks; they call synchronously.
-- **Other clients.** Session-based clients can't keep a conversation open for days, so they'd need the
-  non-task path anyway.
+  `McpBridge:MaxTasksPerSession` 3 and `McpBridge:MaxTasks` 20. A multi-day task times out and holds a slot
+  for each event. Wisps, workers, scheduled tasks and patrols never get tasks.
+- **Other clients.** Session-based clients can't keep a conversation open for days.
 - **It breaks MRTR.** In SDK 2.2.0 a tool that throws `InputRequiredException` inside a task fails it ("MRTR
   and tasks cannot be composed via [McpServerTool] yet"). `create_event` and `cancel_event` would lose
-  [their questions](#asking-for-whats-missing), or need a second version built on in-task `ElicitAsync`.
-- **The handle exists already.** The shortCode lets any agent pick the event up in a later session, and the
-  organizer emails ("everyone has answered", "a required person can't make any time") already say when to
-  come back.
+  [their questions](#asking-for-whats-missing).
 
-#### What fits: `wait_for_update(eventId, timeoutMinutes)`
+**A `wait_for_update(eventId, timeoutMinutes)` task** (optional task support, completing on the next
+milestone or at the timeout) would work, but it is the more expensive way to get the same push:
 
-Task support is *optional*.
+| | `wait_for_update` task | Subscription |
+|---|---|---|
+| Nothing changes | The timeout still completes the task, and each completion is a RockBot turn: a 60-minute wait means up to 24 a day per event | Silence, no cost |
+| Server state | A durable `IMcpTaskStore` in PostgreSQL (SEP-2663 requires the task stored before `CreateTaskAsync` returns), plus a startup sweep that completes tasks a restart cut off | None |
+| Client limits | One of RockBot's 3 task slots per conversation for each watched event | One stream carries every watched event |
+| MRTR | Fine for `wait_for_update` itself (`ExecutionModeSelector` keeps the other tools synchronous), but `"tasks": true` makes RockBot send every tool as a task call, and MRTR through that path is untested | Unaffected; the tools stay ordinary calls |
+| Latency | Immediate | Immediate |
 
-- Called normally: returns the event's current state immediately. Works for every client.
-- Called as a task: completes on the next meaningful change or at the timeout. A meaningful change is: every
-  required participant has voted, a required participant rules out every time, the deadline passes, or the
-  event is finalized or cancelled.
-- Only this tool runs as a task. `McpTasksOptions.ExecutionModeSelector` picks the mode per call, so this
-  tool can be `Optional` while every other tool stays `Synchronous`.
-- The handler waits on `IEventChanges` (services and jobs already raise it after each save) with the timeout,
-  then returns the event.
+**If Tasks are ever needed** (a tool whose own work runs for minutes), the rules above still apply:
 
-RockBot's MCP bridge turns a completed task into a new turn, so RockBot reacts within seconds instead of on
-its next mail check. No other client gains anything.
-
-#### What it would take
-
-- **Durable task store** in PostgreSQL: an `IMcpTaskStore` plus a migration. The in-memory store loses tasks
-  on a restart, which RockBot reports to the conversation as a lost task. SEP-2663 requires each task to be
-  stored durably before `CreateTaskAsync` returns. Under stateless HTTP every request gets a fresh server, so
-  the store must be a singleton or external storage.
-- **Restart recovery.** A deploy kills the waiting handlers. A startup sweep completes every task that was
-  still working with the event's current state. For a "tell me when something changes" tool, an occasional
-  unnecessary wake-up is harmless.
-- **The timeout trade-off.** Every completion starts a RockBot turn and spends tokens, including a
-  "nothing changed" timeout. A 60-minute wait means up to 24 turns a day for each watched event. Prefer waits
-  of about 24 hours (cap it there) and raise `taskTimeoutMinutes` on RockBot's scheduler entry to match. Each
-  watched event still uses one of the conversation's 3 slots.
-- **RockBot config:** `"tasks": true` on the scheduler entry. Calls from a conversation then go out as task
-  calls (`CallToolAsTaskAsync`) for every tool. Verify that the synchronous tools still answer normally and
-  that their MRTR questions still work through that path; this hasn't been tested.
-- **The rule for questions.** Never call `McpQuestion` from a task-enabled tool. A task that has to ask asks
-  with `ElicitAsync`, which the extension routes through the task store; in `handback` mode RockBot delivers
-  it as its own turn. `wait_for_update` has nothing to ask.
-- **Transport.** Task requests are routed by task ID, so stateless HTTP with a shared store should work.
-  Confirm it in tests.
-- **Tests** at about the scale of the MRTR change: the store, the wait completing on each trigger and at the
-  timeout, restart recovery, and a client without Tasks getting the immediate answer.
+- a durable store and restart recovery;
+- a capped timeout;
+- `ExecutionModeSelector`, so only that tool is a task;
+- never `McpQuestion` from a task-enabled tool. A task asks with `ElicitAsync`, which the extension routes
+  through the task store.
 
 ## Web UI
 
@@ -878,7 +891,7 @@ Purged with the event. Admin actions (`organizer.added`, `organizer.removed`, `o
 |---|---|
 | Runtime | .NET 10 (LTS), C# |
 | Web | ASP.NET Core, Blazor (static SSR + InteractiveServer per page) |
-| MCP | `ModelContextProtocol.AspNetCore` 2.2.0, Streamable HTTP, stateless; Tasks extension in v1.1 |
+| MCP | `ModelContextProtocol.AspNetCore` 2.2.0, Streamable HTTP, stateless; resource subscriptions over `subscriptions/listen` in v1.1 (no Tasks extension) |
 | Data | EF Core 10, PostgreSQL (Npgsql), NodaTime plugin |
 | Time | NodaTime 3.3 with the bundled tzdb |
 | Auth | Cookie + OpenIddict client (Microsoft, Google); OpenIddict authorization server and token validation for MCP; personal access tokens (planned) |
@@ -944,8 +957,9 @@ The runbook is [deployment.md](deployment.md); the manifests and scripts are in 
    Funnel host, manifests, migration Job and runbook. The first deployment, and the relay and DNS for
    `sched.marimer.llc`, are steps in [deployment.md](deployment.md). Provider webhooks for later bounces and
    complaints are left for when the volume calls for them.
-6. **v1.1.** `wait_for_update` as an optional task with a durable task store (low priority; see
-   [MCP Tasks](#mcp-tasks-optional-v11) for the evaluation and what it would take); RockBot integration (an
+6. **v1.1.** Push updates with resource subscriptions ([#36](https://github.com/MarimerLLC/scheduler/issues/36);
+   RockBot side [MarimerLLC/rockbot#768](https://github.com/MarimerLLC/rockbot/issues/768); see
+   [Push updates](#push-updates-subscriptions-instead-of-tasks)); RockBot integration (an
    `mcp.json` entry plus handling the invitation emails it already reads through Adjutant); `.ics`
    fallback invite for organizers without a calendar MCP.
 
