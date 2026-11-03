@@ -56,17 +56,15 @@ public sealed class McpSubscriptionTests
         var ev = await CreateAsync(organizer, Bob, Carol);
         var (status, eventUri) = (StatusUri(ev.ShortCode), EventUri(ev.ShortCode));
 
-        // The status URI comes first, so for one change its notification (if any) comes before the event's.
+        // The client may hand over notifications sent back to back in either order, so this counts them per change.
         await using var listener = await Listener.OpenAsync(organizer, status, eventUri);
         await VoteAsync(bob, ev, "yes");
-        var first = await listener.NextAsync();
+        var afterBob = await listener.ReceiveAsync(uris => uris.Contains(eventUri));
         await VoteAsync(carol, ev, "preferred");
-        var second = await listener.NextAsync();
-        var third = await listener.NextAsync();
+        var afterCarol = await listener.ReceiveAsync(uris => uris.Contains(eventUri) && uris.Contains(status));
 
-        Assert.AreEqual(eventUri, UriOf(first), "Bob's vote leaves Carol to answer: no milestone");
-        Assert.AreEqual(status, UriOf(second), "Carol's vote completes the required answers");
-        Assert.AreEqual(eventUri, UriOf(third));
+        CollectionAssert.AreEqual(new[] { eventUri }, afterBob, "Bob's vote leaves Carol to answer: no milestone");
+        CollectionAssert.AreEquivalent(new[] { status, eventUri }, afterCarol, "Carol's vote completes the required answers");
     }
 
     [TestMethod]
@@ -384,6 +382,27 @@ public sealed class McpSubscriptionTests
         }
 
         public async Task<JsonRpcNotification> NextAsync() => await _updates.Reader.ReadAsync().AsTask().WaitAsync(Patience);
+
+        /// <summary>
+        /// The URIs of the updates that arrive until <paramref name="done"/> says enough, plus any that follow
+        /// within half a second, so an extra notification is caught rather than left for the next step.
+        /// </summary>
+        public async Task<List<string>> ReceiveAsync(Func<List<string>, bool> done)
+        {
+            var uris = new List<string>();
+            while (!done(uris))
+                uris.Add(UriOf(await NextAsync()));
+            using var settle = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+            try
+            {
+                while (true)
+                    uris.Add(UriOf(await _updates.Reader.ReadAsync(settle.Token)));
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            return uris;
+        }
 
         private bool IsMine(JsonRpcNotification notification) =>
             notification.Params?["_meta"]?[MetaKeys.SubscriptionId]?.GetValue<string>() == Id;
