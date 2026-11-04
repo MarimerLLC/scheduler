@@ -35,7 +35,13 @@ public interface ISchedulingService
     /// address that is unsubscribed or bounced, and not again when the vote changes nothing and the same copy went
     /// out minutes ago, so a retry stays safe. The result's notices say where a copy went, or why it didn't.
     /// </param>
-    Task<EventView> VoteAsync(CallerIdentity caller, string eventRef, IReadOnlyList<VoteInput> votes, string? note, bool emailReceipt, CancellationToken cancellationToken);
+    /// <param name="unansweredAsNo">
+    /// The slots a form showed the voter, where leaving a time blank means it doesn't work for them: each one not in
+    /// <paramref name="votes"/> that the caller hasn't answered yet is recorded as no, and a notice says how many. An
+    /// answer already saved (say by their agent since the page loaded) is kept, a slot withdrawn meanwhile is ignored,
+    /// and a slot added after the form was shown isn't in the list, so it stays unanswered. Null for none.
+    /// </param>
+    Task<EventView> VoteAsync(CallerIdentity caller, string eventRef, IReadOnlyList<VoteInput> votes, string? note, bool emailReceipt, IReadOnlyCollection<Guid>? unansweredAsNo, CancellationToken cancellationToken);
 
     /// <summary>
     /// A participant suggests times that aren't on the poll, and the organizer is emailed about them. The organizer

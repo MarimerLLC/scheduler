@@ -168,13 +168,22 @@ public sealed class SchedulingService(
         return ToStatus(ev, access.IsOrganizer);
     }
 
-    public async Task<EventView> VoteAsync(CallerIdentity caller, string eventRef, IReadOnlyList<VoteInput> votes, string? note, bool emailReceipt, CancellationToken cancellationToken)
+    public async Task<EventView> VoteAsync(CallerIdentity caller, string eventRef, IReadOnlyList<VoteInput> votes, string? note, bool emailReceipt, IReadOnlyCollection<Guid>? unansweredAsNo, CancellationToken cancellationToken)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
         var now = clock.GetCurrentInstant();
         var account = await FindAccountAsync(db, caller, cancellationToken);
-        var ev = await LoadEventAsync(db, eventRef, tracking: true, cancellationToken);
+        var ev = await LoadEventAsync(db, eventRef, tracking: false, cancellationToken);
         var access = Authorize(ev, caller, account);
+
+        // One person's votes are saved one call at a time: a double submit, or their agent voting while the page saves,
+        // would otherwise both find a time unanswered and insert the same answer. This locks the caller's participant
+        // rows, not the event's, so the organizer's version doesn't move; then it reads the event again, with whatever
+        // the other call saved.
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await LockParticipantsAsync(db, access.Me, cancellationToken);
+        ev = await LoadEventAsync(db, eventRef, tracking: true, cancellationToken);
+        access = Authorize(ev, caller, account);
 
         if (access.Me.Count == 0)
             throw new SchedulingValidationException(
@@ -200,10 +209,20 @@ public sealed class SchedulingService(
         var everyoneHadResponded = EveryoneResponded(ev);
         var alreadyRuledOutEveryTime = access.Me.Where(ev.RulesOutEveryTime).ToHashSet();
         var changed = new HashSet<Participant>();
+        var answered = votes.Select(v => v.SlotId).ToHashSet();
+        var leftBlank = (unansweredAsNo ?? []).Where(id => active.Contains(id) && !answered.Contains(id)).ToHashSet();
+        var savedAsNo = new HashSet<Guid>();
 
         foreach (var participant in access.Me)
         {
-            foreach (var input in votes)
+            // A time the form showed and the voter left blank doesn't work for them, unless they've answered it already.
+            var blanks = leftBlank
+                .Where(id => participant.Votes.All(v => v.SlotId != id))
+                .Select(id => new VoteInput(id, VoteValue.No))
+                .ToList();
+            savedAsNo.UnionWith(blanks.Select(b => b.SlotId));
+
+            foreach (var input in votes.Concat(blanks))
             {
                 var existing = participant.Votes.FirstOrDefault(v => v.SlotId == input.SlotId);
                 if (existing is null)
@@ -231,10 +250,16 @@ public sealed class SchedulingService(
         }
 
         List<string>? notices = null;
+        if (savedAsNo.Count > 0)
+        {
+            notices = [savedAsNo.Count == 1
+                ? "You left 1 time blank, so it's saved as No."
+                : $"You left {savedAsNo.Count} times blank, so they're saved as No."];
+        }
         var receipts = new List<string>();
         if (emailReceipt)
         {
-            notices = [];
+            notices ??= [];
             foreach (var participant in access.Me)
             {
                 if (await QueueVoteReceiptAsync(db, ev, participant, unchanged: !changed.Contains(participant), now, cancellationToken) is { } skipped)
@@ -247,13 +272,17 @@ public sealed class SchedulingService(
             }
         }
 
-        Audit(db, ev, caller, "vote.cast", new { slots = votes.Count, receipt = receipts }, now);
+        Audit(db, ev, caller, "vote.cast", new { slots = votes.Count, blankAsNo = savedAsNo.Count, receipt = receipts }, now);
         foreach (var participant in access.Me.Where(p => !alreadyRuledOutEveryTime.Contains(p) && ev.RulesOutEveryTime(p)))
             QueueEmail(db, ev, ev.OrganizerEmail, await composer.CantMakeAnyTimeAsync(ev, participant, DashboardUrl(ev)), now, replyToOrganizer: false);
         if (!everyoneHadResponded && EveryoneResponded(ev))
             QueueEmail(db, ev, ev.OrganizerEmail, await composer.AllRespondedAsync(ev, DashboardUrl(ev)), now, replyToOrganizer: false);
 
-        await SaveAsync(db, ev, cancellationToken);
+        // Votes don't touch the event row, so there is no version to conflict on. Open pages hear about it once it is
+        // committed.
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        changes.Publish(ev.Id);
         return ToView(ev, caller, account, viewerTimeZone: null, notices);
     }
 
@@ -307,12 +336,10 @@ public sealed class SchedulingService(
         // try, would otherwise both pass the duplicate and limit checks below. This locks the caller's participant rows,
         // not the event's, so the organizer's version doesn't move; then it reads the suggestions saved meanwhile.
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        var myIds = access.Me.Select(p => p.Id).Order().ToArray();
-        await db.Database.ExecuteSqlAsync(
-            $"SELECT 1 FROM \"Participants\" WHERE \"Id\" = ANY({myIds}) ORDER BY \"Id\" FOR UPDATE", cancellationToken);
+        await LockParticipantsAsync(db, access.Me, cancellationToken);
         await db.Suggestions.Where(s => s.EventId == ev.Id).LoadAsync(cancellationToken);
 
-        var mine = myIds.ToHashSet();
+        var mine = access.Me.Select(p => p.Id).ToHashSet();
         var earlier = ev.Suggestions.Where(s => mine.Contains(s.ParticipantId)).ToList();
         var suggester = access.Me.OrderBy(p => p.Email, StringComparer.Ordinal).First();
         var notices = new List<string>();
@@ -823,6 +850,17 @@ public sealed class SchedulingService(
             .Include(e => e.Participants).ThenInclude(p => p.Votes)
             .Include(e => e.Suggestions)
             .AsSplitQuery();
+
+    /// <summary>
+    /// Locks <paramref name="participants"/>' rows until the transaction ends, so one person's calls that read and then
+    /// insert their own rows (votes, suggestions) take turns. In ID order, so two calls can't deadlock.
+    /// </summary>
+    private static async Task LockParticipantsAsync(SchedulerDbContext db, IEnumerable<Participant> participants, CancellationToken cancellationToken)
+    {
+        var ids = participants.Select(p => p.Id).Order().ToArray();
+        await db.Database.ExecuteSqlAsync(
+            $"SELECT 1 FROM \"Participants\" WHERE \"Id\" = ANY({ids}) ORDER BY \"Id\" FOR UPDATE", cancellationToken);
+    }
 
     private static async Task<SchedulingEvent> LoadEventAsync(SchedulerDbContext db, string? eventRef, bool tracking, CancellationToken cancellationToken)
     {

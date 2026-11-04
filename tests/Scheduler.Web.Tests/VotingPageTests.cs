@@ -67,13 +67,13 @@ public sealed partial class VotingPageTests
             ("note", "Mornings are best"));
         html = await TextOf(response);
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode, html);
-        StringAssert.Contains(html, "your answers are saved");
+        StringAssert.Contains(html, "Thanks, your answers are saved. You left 1 time blank, so it's saved as No.");
         StringAssert.Contains(html, "class=\"notice notice-success\"", "the shared success notice, not a plain paragraph");
 
         var votes = await VotesOfAsync("bob@example.com");
         Assert.AreEqual(VoteValue.Preferred, votes![ev.Slots[0].SlotId]);
         Assert.AreEqual(VoteValue.No, votes[ev.Slots[1].SlotId]);
-        Assert.HasCount(2, votes, "an unanswered time stays unanswered");
+        Assert.AreEqual(VoteValue.No, votes[ev.Slots[2].SlotId], "a time left blank is saved as no");
 
         var bob = (await GetAsOrganizerAsync(ev)).Participants.Single(p => p.Email == "bob@example.com");
         Assert.AreEqual("Mornings are best", bob.Note);
@@ -102,7 +102,7 @@ public sealed partial class VotingPageTests
         Assert.AreEqual("bob@example.com", receipt.To);
         StringAssert.Contains(receipt.TextBody, $"{ev.Slots[0].OrganizerLocal}: Preferred");
         StringAssert.Contains(receipt.TextBody, $"{ev.Slots[1].OrganizerLocal}: If necessary");
-        StringAssert.Contains(receipt.TextBody, $"{ev.Slots[2].OrganizerLocal}: Not answered");
+        StringAssert.Contains(receipt.TextBody, $"{ev.Slots[2].OrganizerLocal}: No", "left blank on the first save");
         Assert.IsNotNull(receipt.HtmlBody);
         StringAssert.Contains(receipt.HtmlBody, $"<strong>If necessary</strong> for {WebUtility.HtmlEncode(ev.Slots[1].OrganizerLocal)}");
         StringAssert.Contains(receipt.HtmlBody, WebUtility.HtmlEncode(VotingLinkIn(receipt)));
@@ -216,7 +216,8 @@ public sealed partial class VotingPageTests
             (SlotField(ev.Slots[2].SlotId), "if_necessary"));
 
         var votes = await VotesOfAsync("carol@example.com");
-        Assert.AreEqual(VoteValue.Yes, votes![ev.Slots[1].SlotId]);
+        Assert.AreEqual(VoteValue.No, votes![ev.Slots[0].SlotId]);
+        Assert.AreEqual(VoteValue.Yes, votes[ev.Slots[1].SlotId]);
         Assert.AreEqual(VoteValue.IfNecessary, votes[ev.Slots[2].SlotId]);
     }
 

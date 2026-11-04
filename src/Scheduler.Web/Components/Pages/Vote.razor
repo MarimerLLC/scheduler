@@ -73,8 +73,8 @@ else if (_event is not null)
             <p>Please answer by <strong>@_event.RespondBy</strong>.</p>
         }
         <p class="hint">
-            Answer each time on its own: mark every one that works for you, as many as you like. You don't have to
-            answer them all, and you can come back and change your answers.
+            Answer each time on its own: mark every one that works for you, as many as you like. A time you leave
+            blank is saved as No. You can come back and change your answers.
         </p>
 
         <form method="post" @formname="vote" @onsubmit="VoteAsync" class="vote-form">
@@ -83,6 +83,8 @@ else if (_event is not null)
             {
                 <fieldset class="slot">
                     <legend><strong>@slot.OrganizerLocal</strong></legend>
+                    @* Which times this form showed, so one left blank is saved as no but one added since isn't. *@
+                    <input type="hidden" name="shown" value="@slot.SlotId.ToString("N")" />
                     <time class="viewer-time" datetime="@slot.StartUtc" data-viewer-local data-zone="@_event.OrganizerTimeZone" hidden></time>
                     <div class="choices">
                         @foreach (var (value, label) in Choices)
@@ -238,8 +240,12 @@ else if (_event is not null)
 
         try
         {
-            _event = await Scheduling.VoteAsync(_caller, Code, votes, form["note"].ToString(), emailReceipt, CancellationToken.None);
-            // With a copy asked for, the notices say where it went or why it didn't (unsubscribed, a retry).
+            var shown = form["shown"].Select(id => Guid.TryParseExact(id, "N", out var slotId) ? slotId : Guid.Empty)
+                .Where(id => id != Guid.Empty)
+                .ToList();
+            _event = await Scheduling.VoteAsync(_caller, Code, votes, form["note"].ToString(), emailReceipt, unansweredAsNo: shown, CancellationToken.None);
+            // The notices say how many blank times were saved as no, and, with a copy asked for, where it went or why
+            // it didn't (unsubscribed, a retry).
             _notice = Notice.Success(string.Join(" ",
                 ["Thanks, your answers are saved.", .. _event.Notices ?? [], "You can change them here until the organizer picks a time."]));
         }
