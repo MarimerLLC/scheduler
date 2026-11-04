@@ -131,7 +131,7 @@ public sealed class SchedulerDbContext(DbContextOptions<SchedulerDbContext> opti
             e.HasKey(x => x.Id);
             e.Property(x => x.To).HasMaxLength(FieldLimits.EmailMax);
             e.Property(x => x.ReplyTo).HasMaxLength(FieldLimits.EmailMax);
-            e.Property(x => x.Subject).HasMaxLength(256);
+            e.Property(x => x.Subject).HasMaxLength(FieldLimits.EmailSubjectMax);
             e.Property(x => x.ListUnsubscribeUrl).HasMaxLength(1024);
             e.Property(x => x.Status).HasConversion<string>().HasMaxLength(16);
             e.Property(x => x.LastError).HasMaxLength(2000);

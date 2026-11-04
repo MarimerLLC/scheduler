@@ -287,7 +287,22 @@ public sealed class PlainTextEmailComposer(string mcpUrl, IUnsubscribeLinks? uns
 
     public const string SignInLinkSubject = "Your sign-in link for the scheduling server";
 
-    public static string AddressVerificationSubject(string email) => $"Confirm {email} for the scheduling server";
+    public static string AddressVerificationSubject(string email) => FitSubject($"Confirm {email} for the scheduling server");
+
+    /// <summary>
+    /// A subject cut to what the outbox stores (<see cref="FieldLimits.EmailSubjectMax"/>). Names, addresses and titles
+    /// are each within their own limits, but together they can be longer, and an over-long subject would fail the whole
+    /// change that queued the email. The body always has them in full.
+    /// </summary>
+    public static string FitSubject(string subject)
+    {
+        if (subject.Length <= FieldLimits.EmailSubjectMax)
+            return subject;
+        var cut = FieldLimits.EmailSubjectMax - 1;
+        if (char.IsHighSurrogate(subject[cut - 1]))
+            cut--;
+        return subject[..cut] + "…";
+    }
 
     public static string OrganizerName(SchedulingEvent ev) => ev.OrganizerName ?? ev.OrganizerEmail;
 
@@ -367,7 +382,7 @@ public sealed class PlainTextEmailComposer(string mcpUrl, IUnsubscribeLinks? uns
         return new ComposedEmail(subject, body.ToString(), ListUnsubscribeUrl: unsubscribe.OneClickUrl(to));
     }
 
-    private static string Subject(SchedulingEvent ev, string text) => $"[sched:{ev.ShortCode}] {text}";
+    private static string Subject(SchedulingEvent ev, string text) => FitSubject($"[sched:{ev.ShortCode}] {text}");
 
     private static string Deadline(SchedulingEvent ev) =>
         ev.RespondBy is { } by ? $" (vote by {SlotTimeFormatter.Display(by, ev.OrganizerTimeZone)})" : "";

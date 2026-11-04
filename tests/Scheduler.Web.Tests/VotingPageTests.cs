@@ -146,6 +146,18 @@ public sealed partial class VotingPageTests
 
         response = await browser.SubmitFormAsync($"/e/{ev.ShortCode}", "suggest", ("suggest-zone", "America/Chicago"));
         StringAssert.Contains(await TextOf(response), "Enter at least one time to suggest.");
+
+        // After voting closes, Bob still sees what the organizer decided.
+        using (var scope = _app.Services.CreateScope())
+        {
+            var scheduling = scope.ServiceProvider.GetRequiredService<ISchedulingService>();
+            var dismissed = await scheduling.DismissSuggestionsAsync(Organizer, ev.ShortCode, [suggestion.SuggestionId], organizer.Version, CancellationToken.None);
+            await scheduling.FinalizeAsync(Organizer, ev.ShortCode, ev.Slots[0].SlotId, dismissed.Version, CancellationToken.None);
+        }
+        html = await TextOf(await browser.Http.GetAsync($"/e/{ev.ShortCode}"));
+        StringAssert.Contains(html, "picked");
+        Assert.DoesNotContain("None of these work?", html);
+        StringAssert.Contains(html, "not added by the organizer");
     }
 
     [TestMethod]

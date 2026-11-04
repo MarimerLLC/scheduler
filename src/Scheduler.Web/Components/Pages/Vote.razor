@@ -115,20 +115,7 @@ else if (_event is not null)
             Suggest other start times. The organizer is emailed and decides whether to add them to the poll for everyone;
             until then nothing changes.
         </p>
-        @if (_event.Suggestions is { Count: > 0 } suggested)
-        {
-            <p>Times you suggested:</p>
-            <ul class="slot-totals">
-                @foreach (var suggestion in suggested)
-                {
-                    <li>
-                        <strong>@suggestion.OrganizerLocal</strong>
-                        <time datetime="@suggestion.StartUtc" data-viewer-local data-zone="@_event.OrganizerTimeZone" hidden></time>
-                        <span class="hint">@SuggestionLabel(suggestion.Status)</span>
-                    </li>
-                }
-            </ul>
-        }
+        @MySuggestions
         <form method="post" @formname="suggest" @onsubmit="SuggestAsync" class="vote-form">
             <AntiforgeryToken />
             <div class="slot-inputs">
@@ -157,6 +144,8 @@ else if (_event is not null)
                 </li>
             }
         </ul>
+        @* Voting has closed, but the organizer may still have added or dismissed a time this person suggested. *@
+        @MySuggestions
     }
 }
 
@@ -288,6 +277,24 @@ else if (_event is not null)
             _notice = Notice.Error(ex.Message);
         }
     }
+
+    /// <summary>The times this participant suggested and what the organizer decided; nothing for the organizer.</summary>
+    private RenderFragment MySuggestions => @<text>
+        @if (_event is { IsOrganizer: false, Suggestions.Count: > 0 })
+        {
+            <p>Times you suggested:</p>
+            <ul class="slot-totals">
+                @foreach (var suggestion in _event.Suggestions)
+                {
+                    <li>
+                        <strong>@suggestion.OrganizerLocal</strong>
+                        <time datetime="@suggestion.StartUtc" data-viewer-local data-zone="@_event.OrganizerTimeZone" hidden></time>
+                        <span class="hint">@SuggestionLabel(suggestion.Status)</span>
+                    </li>
+                }
+            </ul>
+        }
+    </text>;
 
     /// <summary>How many times the page offers to suggest at once; suggesting again adds more.</summary>
     private const int SuggestionFields = 3;

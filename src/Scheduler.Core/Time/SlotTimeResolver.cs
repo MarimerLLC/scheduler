@@ -66,6 +66,17 @@ public static class SlotTimeResolver
         return new SlotTime(local, zone.Id, zoned.ToInstant(), zoned.Offset);
     }
 
+    /// <summary>
+    /// Resolves a time already stored as local wall time plus zone (a slot, a suggested time), under the current
+    /// time-zone rules. Leniently, unlike <see cref="Resolve"/>: a stored time was valid when it was given, so if new
+    /// rules skip it, it moves forward, and if they repeat it, it takes the earlier offset, rather than being lost.
+    /// </summary>
+    public static SlotTime ResolveStored(LocalDateTime local, string timeZoneId)
+    {
+        var zoned = GetZone(timeZoneId).AtLeniently(local);
+        return new SlotTime(local, zoned.Zone.Id, zoned.ToInstant(), zoned.Offset);
+    }
+
     private static (LocalDateTime Local, Offset? Offset) Parse(string? start)
     {
         var text = start?.Trim() ?? "";

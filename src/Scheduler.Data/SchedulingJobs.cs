@@ -163,7 +163,7 @@ public sealed class SchedulingJobs(
         {
             // The local time is the source of truth. Leniently: a time the new rules skip moves forward, and an
             // ambiguous one takes the earlier offset, rather than losing the slot.
-            var start = SlotTimeResolver.GetZone(slot.TimeZoneId).AtLeniently(slot.LocalStart).ToInstant();
+            var start = SlotTimeResolver.ResolveStored(slot.LocalStart, slot.TimeZoneId).Start;
             if (start == slot.Start)
                 continue;
             slot.Start = start;
@@ -177,7 +177,7 @@ public sealed class SchedulingJobs(
             .ToListAsync(cancellationToken);
         foreach (var suggestion in suggestions)
         {
-            var start = SlotTimeResolver.GetZone(suggestion.TimeZoneId).AtLeniently(suggestion.LocalStart).ToInstant();
+            var start = SlotTimeResolver.ResolveStored(suggestion.LocalStart, suggestion.TimeZoneId).Start;
             if (start == suggestion.Start)
                 continue;
             suggestion.Start = start;

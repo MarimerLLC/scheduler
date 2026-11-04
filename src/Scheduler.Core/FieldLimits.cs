@@ -14,6 +14,9 @@ public static class FieldLimits
     public const int EmailMax = 254;
     public const int TimeZoneIdMax = 64;
 
+    /// <summary>The longest email subject the outbox stores. Subjects quote names and titles, so they are cut to fit.</summary>
+    public const int EmailSubjectMax = 256;
+
     public const int MaxSlotsPerEvent = 20;
     public const int MaxParticipantsPerEvent = 50;
 

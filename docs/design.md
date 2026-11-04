@@ -249,11 +249,14 @@ organizer, and only they can check that against their calendar.
   organizer; the organizer deciding frees it.
 - **Safe to retry.** A time already on the poll, or already suggested by the caller, isn't suggested again; a notice
   says which. A time the organizer dismissed (or added and then withdrew) can't be suggested again either, so a
-  participant can't keep asking. Only calls that add a suggestion email the organizer.
+  participant can't keep asking. Only calls that add a suggestion email the organizer. One person's calls are taken
+  one at a time (a lock on their participant rows, not the event's), so a double submit can't slip past these checks.
 - **Adding** is proposing: `propose_more_slots` with the suggestions' IDs (alone, or with the organizer's own times in
   the same round), or "Add to the poll" on the event page. Everything about proposing applies: the version, the
   20-time limit, reopening an expired or finalized event, and the "New times" email to everyone invited, the person
-  who suggested it included (they vote on it like anyone). The slot keeps the zone it was suggested in. Any waiting
+  who suggested it included (they vote on it like anyone). The slot keeps the zone and the exact local time it was
+  suggested in, resolved like the tzdb job resolves stored times (a time new rules skip moves forward rather than being
+  refused). A time already in the round, the organizer's own or the same moment suggested by two people, is added once. Any waiting
   suggestion of a time the round adds is marked added too, whoever made it, even when the organizer typed it in.
 - **Dismissing** (`dismiss_suggestions`, or "Dismiss") emails no one: being told no by email reads worse than seeing
   "not added by the organizer" on the voting page. It takes the version like any organizer edit. The organizer can
@@ -777,6 +780,8 @@ Outbound only. Nothing parses inbound mail.
 Every message about an event:
 
 - Subject starts with `[sched:SHORTCODE]`, e.g. `[sched:7KQ2M9XD] Rocky Lhotka asks: Planning (vote by Fri Oct 30)`.
+  Subjects are cut to the outbox's 256 characters with an ellipsis: a long name and title together could otherwise fail
+  the change that queued the email. The body has them in full.
 - Plain-text body first (agents parse it; `PlainTextEmailComposer`), HTML alternative with the same content,
   rendered from Razor components in `Scheduler.Web/Email/Templates` with `HtmlRenderer` so the markup lives
   next to the UI (`HtmlEmailComposer`). Inline styles only, one column; Razor encodes the organizer's text.

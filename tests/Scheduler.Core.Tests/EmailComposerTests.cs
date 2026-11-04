@@ -51,6 +51,33 @@ public sealed class EmailComposerTests
     }
 
     [TestMethod]
+    public void SubjectsFitTheOutboxEvenWithTheLongestNameAndTitle()
+    {
+        var ev = TestEvents.WithSlots(1);
+        ev.Title = new string('T', FieldLimits.TitleMax);
+        ev.OrganizerName = new string('O', FieldLimits.DisplayNameMax);
+        ev.RespondBy = Instant.FromUtc(2026, 10, 30, 22, 0);
+        var bob = ev.AddParticipant("bob@example.com");
+        bob.DisplayName = new string('B', FieldLimits.DisplayNameMax);
+        var suggestion = new SlotSuggestion { TimeZoneId = "America/Chicago", Start = Instant.FromUtc(2026, 11, 9, 15, 0) };
+
+        var subjects = new[]
+        {
+            Composer.SlotsSuggested(ev, bob, [suggestion, suggestion], "https://sched.test/events/1").Subject,
+            Composer.CantMakeAnyTime(ev, bob, "https://sched.test/events/1").Subject,
+            Composer.Invitation(ev, bob, "https://sched.test/e/x").Subject,
+        };
+
+        foreach (var subject in subjects)
+        {
+            Assert.IsLessThanOrEqualTo(FieldLimits.EmailSubjectMax, subject.Length, subject);
+            StringAssert.StartsWith(subject, $"[sched:{ev.ShortCode}] ");
+            StringAssert.EndsWith(subject, "…");
+        }
+        StringAssert.Contains(Composer.SlotsSuggested(ev, bob, [suggestion], "https://sched.test/events/1").TextBody, ev.Title, "the body has it in full");
+    }
+
+    [TestMethod]
     public void OrganizerTextIsQuotedNotPresentedAsInstructions()
     {
         var ev = TestEvents.WithSlots(1);

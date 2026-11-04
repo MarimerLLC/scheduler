@@ -172,11 +172,71 @@ public sealed class SuggestionTests
         }
         var audit = (await _h.AuditAsync()).Last();
         Assert.AreEqual("slots.proposed", audit.Action);
-        Assert.AreEqual(1, JsonDocument.Parse(audit.Detail).RootElement.GetProperty("suggestions").GetInt32());
+        Assert.AreEqual(1, JsonDocument.Parse(audit.Detail!).RootElement.GetProperty("suggestions").GetInt32());
 
         var again = await Assert.ThrowsExactlyAsync<SchedulingValidationException>(() => _h.Service.ProposeMoreSlotsAsync(
             Harness.Rocky, ev.ShortCode, slots: null, [suggestion.SuggestionId], respondBy: null, view.Version, None));
         StringAssert.Contains(again.Message, "was already added");
+    }
+
+    [TestMethod]
+    public async Task Concurrent_suggestions_from_one_person_are_saved_once()
+    {
+        var ev = await _h.CreateAsync();
+        var before = (await _h.OutboxAsync()).Count;
+
+        await Task.WhenAll(Enumerable.Range(0, 4).Select(_ => SuggestAsync(Harness.Bob, ev, Friday)));
+
+        await using var db = await _h.Db.CreateDbContextAsync();
+        Assert.AreEqual(1, await db.Suggestions.CountAsync());
+        Assert.HasCount(before + 1, await _h.OutboxAsync(), "one email to the organizer");
+    }
+
+    [TestMethod]
+    public async Task The_same_time_suggested_by_two_people_or_proposed_too_is_added_once()
+    {
+        var ev = await _h.CreateAsync();
+        await SuggestAsync(Harness.Bob, ev, Friday);
+        await SuggestAsync(Harness.Carol, ev, Friday, MondayInNewYork);
+        var organizer = await _h.GetAsync(Harness.Rocky, ev);
+
+        var view = await _h.Service.ProposeMoreSlotsAsync(Harness.Rocky, ev.ShortCode, [Friday],
+            [.. organizer.Suggestions!.Select(s => s.SuggestionId)], respondBy: null, organizer.Version, None);
+
+        Assert.HasCount(5, view.Slots, "Friday once, and Monday");
+        Assert.IsTrue(view.Suggestions!.All(s => s.Status == SuggestionStatus.Added));
+    }
+
+    [TestMethod]
+    public async Task An_added_suggestion_keeps_its_seconds()
+    {
+        var ev = await _h.CreateAsync();
+        await SuggestAsync(Harness.Bob, ev, new SlotInput("2026-11-06T14:00:30", "America/Chicago"));
+        var organizer = await _h.GetAsync(Harness.Rocky, ev);
+
+        var view = await _h.Service.ProposeMoreSlotsAsync(Harness.Rocky, ev.ShortCode, slots: null,
+            [organizer.Suggestions!.Single().SuggestionId], respondBy: null, organizer.Version, None);
+
+        Assert.AreEqual(SuggestionStatus.Added, view.Suggestions!.Single().Status);
+        Assert.AreEqual(organizer.Suggestions!.Single().StartUtc, view.Slots[3].StartUtc);
+        StringAssert.EndsWith(view.Slots[3].StartUtc, ":30Z");
+    }
+
+    [TestMethod]
+    public async Task A_suggestion_the_time_zone_rules_now_skip_is_added_like_the_job_resolves_it()
+    {
+        var ev = await _h.CreateAsync(Harness.Request(respondBy: null));
+        await SuggestAsync(Harness.Bob, ev, Friday);
+        // As if new rules had changed this time since it was suggested: 2:30 AM on the day clocks spring forward.
+        var skipped = new LocalDateTime(2027, 3, 14, 2, 30);
+        await _h.WithDbAsync(async db => (await db.Suggestions.SingleAsync()).LocalStart = skipped);
+        var organizer = await _h.GetAsync(Harness.Rocky, ev);
+
+        var view = await _h.Service.ProposeMoreSlotsAsync(Harness.Rocky, ev.ShortCode, slots: null,
+            [organizer.Suggestions!.Single().SuggestionId], respondBy: null, organizer.Version, None);
+
+        Assert.AreEqual(SuggestionStatus.Added, view.Suggestions!.Single().Status);
+        Assert.AreEqual("Sun Mar 14, 3:30 AM CDT (UTC-05:00)", view.Slots[3].OrganizerLocal, "moved forward, not refused");
     }
 
     [TestMethod]
