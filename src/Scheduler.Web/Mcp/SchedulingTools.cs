@@ -86,7 +86,7 @@ public sealed class SchedulingTools(ISchedulingService scheduling, IAdminService
         Run(caller => scheduling.GetEventAsync(caller, eventId, timeZone, cancellationToken));
 
     [McpServerTool(Name = "vote", Title = "Vote on proposed times", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
-    [Description("Records the user's answer for one or more slots. Each slot is answered on its own: mark every slot the user can make, however many there are, as preferred if it's a great time or yes if it's fine. Save if_necessary for times that would be painful, and no for times they can't make. Voting again replaces earlier answers, so retrying is safe. Confirm the answers with the user first.")]
+    [Description("Records the user's answer for one or more slots. Each slot is answered on its own: mark every slot the user can make, however many there are, as preferred if it's a great time or yes if it's fine. Save if_necessary for times that would be painful, and no for times they can't make. Answer every slot: one left out stays unanswered, and the organizer keeps waiting on it. Voting again replaces earlier answers, so retrying is safe. Confirm the answers with the user first.")]
     public Task<string> Vote(
         [Description("The event's id or shortCode.")] string eventId,
         [Description("One entry per slot answered.")] McpVote[] votes,
@@ -99,6 +99,7 @@ public sealed class SchedulingTools(ISchedulingService scheduling, IAdminService
             votes.Select(v => new VoteInput(ToolJson.ParseId(v.SlotId, "slot"), ToolJson.ParseVote(v.Vote))).ToList(),
             note,
             emailReceipt,
+            unansweredAsNo: null,
             cancellationToken));
 
     [McpServerTool(Name = "suggest_slots", Title = "Suggest other times", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = true)]

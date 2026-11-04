@@ -231,6 +231,6 @@ public sealed class OrganizerPageTests
         using var scope = _app.Services.CreateScope();
         await scope.ServiceProvider.GetRequiredService<ISchedulingService>().VoteAsync(
             new CallerIdentity(null, [email], Channel.Web), ev.ShortCode,
-            [.. ev.Slots.Select(s => new VoteInput(s.SlotId, VoteValue.Preferred))], null, emailReceipt: false, CancellationToken.None);
+            [.. ev.Slots.Select(s => new VoteInput(s.SlotId, VoteValue.Preferred))], null, emailReceipt: false, unansweredAsNo: null, CancellationToken.None);
     }
 }

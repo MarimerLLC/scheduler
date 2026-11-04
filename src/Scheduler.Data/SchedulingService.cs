@@ -168,7 +168,7 @@ public sealed class SchedulingService(
         return ToStatus(ev, access.IsOrganizer);
     }
 
-    public async Task<EventView> VoteAsync(CallerIdentity caller, string eventRef, IReadOnlyList<VoteInput> votes, string? note, bool emailReceipt, CancellationToken cancellationToken)
+    public async Task<EventView> VoteAsync(CallerIdentity caller, string eventRef, IReadOnlyList<VoteInput> votes, string? note, bool emailReceipt, IReadOnlyCollection<Guid>? unansweredAsNo, CancellationToken cancellationToken)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
         var now = clock.GetCurrentInstant();
@@ -200,10 +200,20 @@ public sealed class SchedulingService(
         var everyoneHadResponded = EveryoneResponded(ev);
         var alreadyRuledOutEveryTime = access.Me.Where(ev.RulesOutEveryTime).ToHashSet();
         var changed = new HashSet<Participant>();
+        var answered = votes.Select(v => v.SlotId).ToHashSet();
+        var leftBlank = (unansweredAsNo ?? []).Where(id => active.Contains(id) && !answered.Contains(id)).ToHashSet();
+        var savedAsNo = new HashSet<Guid>();
 
         foreach (var participant in access.Me)
         {
-            foreach (var input in votes)
+            // A time the form showed and the voter left blank doesn't work for them, unless they've answered it already.
+            var blanks = leftBlank
+                .Where(id => participant.Votes.All(v => v.SlotId != id))
+                .Select(id => new VoteInput(id, VoteValue.No))
+                .ToList();
+            savedAsNo.UnionWith(blanks.Select(b => b.SlotId));
+
+            foreach (var input in votes.Concat(blanks))
             {
                 var existing = participant.Votes.FirstOrDefault(v => v.SlotId == input.SlotId);
                 if (existing is null)
@@ -231,10 +241,16 @@ public sealed class SchedulingService(
         }
 
         List<string>? notices = null;
+        if (savedAsNo.Count > 0)
+        {
+            notices = [savedAsNo.Count == 1
+                ? "You left 1 time blank, so it's saved as No."
+                : $"You left {savedAsNo.Count} times blank, so they're saved as No."];
+        }
         var receipts = new List<string>();
         if (emailReceipt)
         {
-            notices = [];
+            notices ??= [];
             foreach (var participant in access.Me)
             {
                 if (await QueueVoteReceiptAsync(db, ev, participant, unchanged: !changed.Contains(participant), now, cancellationToken) is { } skipped)
@@ -247,7 +263,7 @@ public sealed class SchedulingService(
             }
         }
 
-        Audit(db, ev, caller, "vote.cast", new { slots = votes.Count, receipt = receipts }, now);
+        Audit(db, ev, caller, "vote.cast", new { slots = votes.Count, blankAsNo = savedAsNo.Count, receipt = receipts }, now);
         foreach (var participant in access.Me.Where(p => !alreadyRuledOutEveryTime.Contains(p) && ev.RulesOutEveryTime(p)))
             QueueEmail(db, ev, ev.OrganizerEmail, await composer.CantMakeAnyTimeAsync(ev, participant, DashboardUrl(ev)), now, replyToOrganizer: false);
         if (!everyoneHadResponded && EveryoneResponded(ev))

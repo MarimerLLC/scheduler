@@ -131,6 +131,76 @@ public sealed class VotingTests
         Assert.IsEmpty(CantMakeIt(await _h.OutboxAsync()));
     }
 
+    [TestMethod]
+    public async Task TimesAFormShowedAndTheVoterLeftBlankAreSavedAsNo()
+    {
+        var ev = await _h.CreateAsync();
+
+        var view = await FormVoteAsync(ev, [ev.Slots[0].SlotId, ev.Slots[1].SlotId, ev.Slots[2].SlotId], (0, VoteValue.Yes));
+
+        CollectionAssert.AreEqual(new VoteValue?[] { VoteValue.Yes, VoteValue.No, VoteValue.No }, view.Slots.Select(s => s.MyVote).ToList());
+        CollectionAssert.AreEqual(new[] { "You left 2 times blank, so they're saved as No." }, view.Notices!.ToList());
+        Assert.IsTrue(view.Participants.Single(p => p.Email == "bob@example.com").Responded, "every time is answered");
+        var audit = (await _h.AuditAsync()).Last(a => a.Action == "vote.cast");
+        Assert.AreEqual(2, JsonDocument.Parse(audit.Detail!).RootElement.GetProperty("blankAsNo").GetInt32());
+    }
+
+    [TestMethod]
+    public async Task ABlankTimeKeepsAnAnswerSavedSinceTheFormWasShown()
+    {
+        var ev = await _h.CreateAsync();
+        await _h.VoteAsync(Harness.Bob, ev, (1, VoteValue.Preferred));   // say, by their agent, after the page loaded
+
+        var view = await FormVoteAsync(ev, [ev.Slots[0].SlotId, ev.Slots[1].SlotId, ev.Slots[2].SlotId], (0, VoteValue.Yes));
+
+        CollectionAssert.AreEqual(new VoteValue?[] { VoteValue.Yes, VoteValue.Preferred, VoteValue.No }, view.Slots.Select(s => s.MyVote).ToList());
+        CollectionAssert.AreEqual(new[] { "You left 1 time blank, so it's saved as No." }, view.Notices!.ToList());
+    }
+
+    [TestMethod]
+    public async Task ATimeAddedOrWithdrawnSinceTheFormWasShownIsntSavedAsNo()
+    {
+        var ev = await _h.CreateAsync();
+        var shown = new[] { ev.Slots[0].SlotId, ev.Slots[1].SlotId, ev.Slots[2].SlotId, Guid.NewGuid() };
+        var more = await _h.Service.ProposeMoreSlotsAsync(Harness.Rocky, ev.ShortCode,
+            [new("2026-11-06T14:00", "America/Chicago")], suggestionIds: null, null, ev.Version, CancellationToken.None);
+        await _h.Service.WithdrawSlotAsync(Harness.Rocky, ev.ShortCode, ev.Slots[2].SlotId, more.Version, CancellationToken.None);
+
+        var view = await FormVoteAsync(ev, shown, (0, VoteValue.Yes));
+
+        CollectionAssert.AreEqual(new VoteValue?[] { VoteValue.Yes, VoteValue.No, null }, view.Slots.Select(s => s.MyVote).ToList(),
+            "the withdrawn time is gone, and the new one wasn't on the form");
+        Assert.IsFalse(view.Participants.Single(p => p.Email == "bob@example.com").Responded);
+        await using var db = await _h.Db.CreateDbContextAsync();
+        Assert.AreEqual(2, await db.Votes.CountAsync());
+    }
+
+    [TestMethod]
+    public async Task ANoWithEveryOtherTimeLeftBlankTellsTheOrganizerNoTimeWorks()
+    {
+        var ev = await _h.CreateAsync();
+
+        await FormVoteAsync(ev, [ev.Slots[0].SlotId, ev.Slots[1].SlotId, ev.Slots[2].SlotId], (0, VoteValue.No));
+
+        Assert.HasCount(1, CantMakeIt(await _h.OutboxAsync()));
+    }
+
+    [TestMethod]
+    public async Task WithoutAFormAnOmittedTimeStaysUnanswered()
+    {
+        var ev = await _h.CreateAsync();
+
+        var view = await _h.VoteAsync(Harness.Bob, ev, (0, VoteValue.Yes));
+
+        CollectionAssert.AreEqual(new VoteValue?[] { VoteValue.Yes, null, null }, view.Slots.Select(s => s.MyVote).ToList());
+        Assert.IsNull(view.Notices);
+    }
+
+    /// <summary>A vote from the voting page, which showed <paramref name="shown"/>; any of them not answered was left blank.</summary>
+    private Task<EventView> FormVoteAsync(EventView ev, Guid[] shown, params (int Slot, VoteValue Value)[] votes) =>
+        _h.Service.VoteAsync(Harness.Bob, ev.ShortCode, [.. votes.Select(v => new VoteInput(ev.Slots[v.Slot].SlotId, v.Value))],
+            null, emailReceipt: false, unansweredAsNo: shown, CancellationToken.None);
+
     private static List<OutboxEmail> CantMakeIt(IEnumerable<OutboxEmail> outbox) =>
         outbox.Where(o => o.Subject.Contains("can't make any time", StringComparison.Ordinal)).ToList();
 
@@ -145,7 +215,7 @@ public sealed class VotingTests
 
         var view = await _h.Service.VoteAsync(Harness.Bob, ev.ShortCode,
             [new(ev.Slots[0].SlotId, VoteValue.Preferred), new(ev.Slots[2].SlotId, VoteValue.IfNecessary)],
-            "Mornings are hard", emailReceipt: true, CancellationToken.None);
+            "Mornings are hard", emailReceipt: true, unansweredAsNo: null, CancellationToken.None);
 
         CollectionAssert.AreEqual(new[] { "A copy of your answers is on its way to bob@example.com." }, view.Notices!.ToList());
 
@@ -204,7 +274,7 @@ public sealed class VotingTests
         }
 
         var bob = await ReceiptVoteAsync(ev, VoteValue.Yes, null);
-        var carol = await _h.Service.VoteAsync(Harness.Carol, ev.ShortCode, [new(ev.Slots[0].SlotId, VoteValue.Yes)], null, emailReceipt: true, CancellationToken.None);
+        var carol = await _h.Service.VoteAsync(Harness.Carol, ev.ShortCode, [new(ev.Slots[0].SlotId, VoteValue.Yes)], null, emailReceipt: true, unansweredAsNo: null, CancellationToken.None);
 
         Assert.IsEmpty(await ReceiptsAsync());
         StringAssert.Contains(bob.Notices!.Single(), "bob@example.com has asked this server not to email it, so no copy of your answers was sent.");
@@ -213,7 +283,7 @@ public sealed class VotingTests
     }
 
     private Task<EventView> ReceiptVoteAsync(EventView ev, VoteValue value, string? note) =>
-        _h.Service.VoteAsync(Harness.Bob, ev.ShortCode, [new(ev.Slots[0].SlotId, value)], note, emailReceipt: true, CancellationToken.None);
+        _h.Service.VoteAsync(Harness.Bob, ev.ShortCode, [new(ev.Slots[0].SlotId, value)], note, emailReceipt: true, unansweredAsNo: null, CancellationToken.None);
 
     private async Task<List<OutboxEmail>> ReceiptsAsync() =>
         (await _h.OutboxAsync()).Where(o => o.Subject.Contains("Your answers", StringComparison.Ordinal)).ToList();
@@ -224,11 +294,11 @@ public sealed class VotingTests
         var ev = await _h.CreateAsync();
 
         await Assert.ThrowsExactlyAsync<SchedulingValidationException>(() => _h.Service.VoteAsync(
-            Harness.Bob, ev.ShortCode, [new(Guid.NewGuid(), VoteValue.Preferred)], null, emailReceipt: false, CancellationToken.None));
+            Harness.Bob, ev.ShortCode, [new(Guid.NewGuid(), VoteValue.Preferred)], null, emailReceipt: false, unansweredAsNo: null, CancellationToken.None));
         await Assert.ThrowsExactlyAsync<SchedulingValidationException>(() => _h.VoteAsync(
             Harness.Bob, ev, (0, VoteValue.Preferred), (0, VoteValue.No)));
         await Assert.ThrowsExactlyAsync<SchedulingValidationException>(() => _h.Service.VoteAsync(
-            Harness.Bob, ev.ShortCode, [], null, emailReceipt: false, CancellationToken.None));
+            Harness.Bob, ev.ShortCode, [], null, emailReceipt: false, unansweredAsNo: null, CancellationToken.None));
     }
 
     [TestMethod]
@@ -255,9 +325,9 @@ public sealed class VotingTests
         var ev = await _h.CreateAsync();
         var slot = ev.Slots[0].SlotId;
 
-        await _h.Service.VoteAsync(Harness.Bob, ev.ShortCode, [new(slot, VoteValue.IfNecessary)], "Mornings are hard", emailReceipt: false, CancellationToken.None);
-        var kept = await _h.Service.VoteAsync(Harness.Bob, ev.ShortCode, [new(slot, VoteValue.No)], null, emailReceipt: false, CancellationToken.None);
-        var cleared = await _h.Service.VoteAsync(Harness.Bob, ev.ShortCode, [new(slot, VoteValue.No)], "", emailReceipt: false, CancellationToken.None);
+        await _h.Service.VoteAsync(Harness.Bob, ev.ShortCode, [new(slot, VoteValue.IfNecessary)], "Mornings are hard", emailReceipt: false, unansweredAsNo: null, CancellationToken.None);
+        var kept = await _h.Service.VoteAsync(Harness.Bob, ev.ShortCode, [new(slot, VoteValue.No)], null, emailReceipt: false, unansweredAsNo: null, CancellationToken.None);
+        var cleared = await _h.Service.VoteAsync(Harness.Bob, ev.ShortCode, [new(slot, VoteValue.No)], "", emailReceipt: false, unansweredAsNo: null, CancellationToken.None);
 
         Assert.AreEqual("Mornings are hard", kept.Participants.Single(p => p.Email == "bob@example.com").Note);
         Assert.IsNull(cleared.Participants.Single(p => p.Email == "bob@example.com").Note);
