@@ -186,6 +186,25 @@ public sealed class VotingTests
     }
 
     [TestMethod]
+    public async Task ADoubleSubmitSavesWithoutAConflict()
+    {
+        var ev = await _h.CreateAsync();
+        Guid[] shown = [ev.Slots[0].SlotId, ev.Slots[1].SlotId, ev.Slots[2].SlotId];
+
+        // A double tap on Save: both requests find nothing saved yet, and would insert the same answers. A few tries,
+        // because each one is a race.
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            await Task.WhenAll(FormVoteAsync(ev, shown, (0, VoteValue.Yes)), FormVoteAsync(ev, shown, (0, VoteValue.Yes)));
+
+            var view = await _h.GetAsync(Harness.Bob, ev);
+            CollectionAssert.AreEqual(new VoteValue?[] { VoteValue.Yes, VoteValue.No, VoteValue.No }, view.Slots.Select(s => s.MyVote).ToList());
+            await using var db = await _h.Db.CreateDbContextAsync();
+            await db.Votes.ExecuteDeleteAsync();
+        }
+    }
+
+    [TestMethod]
     public async Task WithoutAFormAnOmittedTimeStaysUnanswered()
     {
         var ev = await _h.CreateAsync();

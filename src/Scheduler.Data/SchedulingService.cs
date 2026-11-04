@@ -173,8 +173,17 @@ public sealed class SchedulingService(
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
         var now = clock.GetCurrentInstant();
         var account = await FindAccountAsync(db, caller, cancellationToken);
-        var ev = await LoadEventAsync(db, eventRef, tracking: true, cancellationToken);
+        var ev = await LoadEventAsync(db, eventRef, tracking: false, cancellationToken);
         var access = Authorize(ev, caller, account);
+
+        // One person's votes are saved one call at a time: a double submit, or their agent voting while the page saves,
+        // would otherwise both find a time unanswered and insert the same answer. This locks the caller's participant
+        // rows, not the event's, so the organizer's version doesn't move; then it reads the event again, with whatever
+        // the other call saved.
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await LockParticipantsAsync(db, access.Me, cancellationToken);
+        ev = await LoadEventAsync(db, eventRef, tracking: true, cancellationToken);
+        access = Authorize(ev, caller, account);
 
         if (access.Me.Count == 0)
             throw new SchedulingValidationException(
@@ -269,7 +278,11 @@ public sealed class SchedulingService(
         if (!everyoneHadResponded && EveryoneResponded(ev))
             QueueEmail(db, ev, ev.OrganizerEmail, await composer.AllRespondedAsync(ev, DashboardUrl(ev)), now, replyToOrganizer: false);
 
-        await SaveAsync(db, ev, cancellationToken);
+        // Votes don't touch the event row, so there is no version to conflict on. Open pages hear about it once it is
+        // committed.
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        changes.Publish(ev.Id);
         return ToView(ev, caller, account, viewerTimeZone: null, notices);
     }
 
@@ -323,12 +336,10 @@ public sealed class SchedulingService(
         // try, would otherwise both pass the duplicate and limit checks below. This locks the caller's participant rows,
         // not the event's, so the organizer's version doesn't move; then it reads the suggestions saved meanwhile.
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        var myIds = access.Me.Select(p => p.Id).Order().ToArray();
-        await db.Database.ExecuteSqlAsync(
-            $"SELECT 1 FROM \"Participants\" WHERE \"Id\" = ANY({myIds}) ORDER BY \"Id\" FOR UPDATE", cancellationToken);
+        await LockParticipantsAsync(db, access.Me, cancellationToken);
         await db.Suggestions.Where(s => s.EventId == ev.Id).LoadAsync(cancellationToken);
 
-        var mine = myIds.ToHashSet();
+        var mine = access.Me.Select(p => p.Id).ToHashSet();
         var earlier = ev.Suggestions.Where(s => mine.Contains(s.ParticipantId)).ToList();
         var suggester = access.Me.OrderBy(p => p.Email, StringComparer.Ordinal).First();
         var notices = new List<string>();
@@ -839,6 +850,17 @@ public sealed class SchedulingService(
             .Include(e => e.Participants).ThenInclude(p => p.Votes)
             .Include(e => e.Suggestions)
             .AsSplitQuery();
+
+    /// <summary>
+    /// Locks <paramref name="participants"/>' rows until the transaction ends, so one person's calls that read and then
+    /// insert their own rows (votes, suggestions) take turns. In ID order, so two calls can't deadlock.
+    /// </summary>
+    private static async Task LockParticipantsAsync(SchedulerDbContext db, IEnumerable<Participant> participants, CancellationToken cancellationToken)
+    {
+        var ids = participants.Select(p => p.Id).Order().ToArray();
+        await db.Database.ExecuteSqlAsync(
+            $"SELECT 1 FROM \"Participants\" WHERE \"Id\" = ANY({ids}) ORDER BY \"Id\" FOR UPDATE", cancellationToken);
+    }
 
     private static async Task<SchedulingEvent> LoadEventAsync(SchedulerDbContext db, string? eventRef, bool tracking, CancellationToken cancellationToken)
     {

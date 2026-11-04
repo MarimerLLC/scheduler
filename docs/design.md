@@ -236,7 +236,9 @@ The same labels are used on the voting page, the event page and in tallies. Only
   with nothing chosen at all is still refused, since that is more likely a slip than "no to everything". The
   `vote` tool doesn't do this: an agent answers each slot from the calendar, and may update just one, so a slot
   it leaves out stays unanswered (its description asks it to answer every slot).
-- Voting again replaces earlier answers.
+- Voting again replaces earlier answers. One person's votes are saved one call at a time (a lock on their participant
+  rows, not the event's, so the version doesn't move), and each call reads their answers again under that lock, so a
+  double submit, or their agent voting while the page saves, can't insert the same answer twice.
 - Votes on a withdrawn slot are deleted with it.
 - The organizer doesn't vote: they proposed the slots, so every slot works for them.
 
