@@ -121,6 +121,47 @@ else
         </tbody>
     </table>
 
+    @if (PendingSuggestions.Count > 0)
+    {
+        <h2>Suggested times</h2>
+        <p class="hint">
+            People invited suggested these; they aren't on the poll. Check your calendar first. Adding a time puts it on the
+            poll and emails everyone invited about it@(_event.State is EventState.Finalized or EventState.Expired ? ", and reopens voting" : "").
+            Dismissing it emails no one; the person who suggested it sees it wasn't added.
+        </p>
+        <table class="list suggestions">
+            <thead>
+                <tr><th>Time</th><th>Suggested by</th><th></th></tr>
+            </thead>
+            <tbody>
+                @foreach (var suggestion in PendingSuggestions)
+                {
+                    <tr>
+                        <td>
+                            @suggestion.OrganizerLocal
+                            @if (suggestion.SuggestedLocal != suggestion.OrganizerLocal)
+                            {
+                                <span class="hint person-email">their time: @suggestion.SuggestedLocal</span>
+                            }
+                        </td>
+                        <td data-label="Suggested by">@(suggestion.SuggestedByName ?? suggestion.SuggestedBy)</td>
+                        <td>
+                            @if (CanAddSuggestions)
+                            {
+                                <button disabled="@_busy" @onclick="() => AddSuggestionsAsync([suggestion])">Add to the poll</button>
+                            }
+                            <button disabled="@_busy" @onclick="() => DismissSuggestionAsync(suggestion)">Dismiss</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (CanAddSuggestions && PendingSuggestions.Count > 1)
+        {
+            <button disabled="@_busy" @onclick="() => AddSuggestionsAsync(PendingSuggestions)">Add all @PendingSuggestions.Count to the poll</button>
+        }
+    }
+
     <h2>People</h2>
     <table class="list">
         <thead>
@@ -288,12 +329,32 @@ else
     private Task ProposeAsync() => RunAsync(async ev =>
     {
         var slots = _newSlots.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => new SlotInput(s, ev.OrganizerTimeZone)).ToList();
-        var view = await Scheduling.ProposeMoreSlotsAsync(_caller!, ev.ShortCode, slots,
+        var view = await Scheduling.ProposeMoreSlotsAsync(_caller!, ev.ShortCode, slots, suggestionIds: null,
             string.IsNullOrWhiteSpace(_newDeadline) ? null : _newDeadline, ev.Version, CancellationToken.None);
         _newSlots.Clear();
         _newSlots.AddRange([string.Empty, string.Empty]);
         _newDeadline = null;
         return string.Join(" ", new[] { $"Sent {slots.Count} new time(s) to everyone invited." }.Concat(view.Notices ?? []));
+    });
+
+    private IReadOnlyList<SuggestionView> PendingSuggestions =>
+        _event?.Suggestions?.Where(s => s.Status == SuggestionStatus.Pending).ToList() ?? [];
+
+    /// <summary>Adding a time is proposing it, which works while voting, and reopens an expired or finalized event.</summary>
+    private bool CanAddSuggestions => _event?.State is EventState.Open or EventState.Expired or EventState.Finalized;
+
+    private Task AddSuggestionsAsync(IReadOnlyList<SuggestionView> suggestions) => RunAsync(async ev =>
+    {
+        var view = await Scheduling.ProposeMoreSlotsAsync(_caller!, ev.ShortCode, slots: null,
+            suggestions.Select(s => s.SuggestionId).ToList(), respondBy: null, ev.Version, CancellationToken.None);
+        var added = suggestions.Count == 1 ? $"Added {suggestions[0].OrganizerLocal} to the poll" : $"Added {suggestions.Count} suggested times to the poll";
+        return string.Join(" ", new[] { $"{added} and emailed everyone invited about it." }.Concat(view.Notices ?? []));
+    });
+
+    private Task DismissSuggestionAsync(SuggestionView suggestion) => RunAsync(async ev =>
+    {
+        await Scheduling.DismissSuggestionsAsync(_caller!, ev.ShortCode, [suggestion.SuggestionId], ev.Version, CancellationToken.None);
+        return $"Dismissed the suggested time {suggestion.OrganizerLocal}.";
     });
 
     private void ToggleResend(string email, bool selected)

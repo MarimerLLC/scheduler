@@ -121,7 +121,7 @@ public sealed class EventStatusTests
         var before = await StatusAsync(Harness.Bob, ev);
 
         await _h.Service.ProposeMoreSlotsAsync(Harness.Rocky, ev.ShortCode, [new("2026-11-06T10:00", "America/Chicago")],
-            "2026-10-30T17:00:30", ev.Version, None);
+            suggestionIds: null, "2026-10-30T17:00:30", ev.Version, None);
         var after = await StatusAsync(Harness.Bob, ev);
 
         Assert.AreEqual(before.RespondBy, after.RespondBy, "the display text has no seconds");

@@ -77,7 +77,13 @@ else
                     <tr>
                         <td><a href="/events/@ev.Id">@ev.Title</a> <code class="hint">@ev.ShortCode</code></td>
                         <td data-label="Status"><span class="state state-@ev.State.ToString().ToLowerInvariant()">@StateLabel(ev.State)</span></td>
-                        <td data-label="Answered">@ev.Responded of @ev.Invited</td>
+                        <td data-label="Answered">
+                            @ev.Responded of @ev.Invited
+                            @if (ev.PendingSuggestions is > 0)
+                            {
+                                <span class="hint">(@ev.PendingSuggestions suggested @(ev.PendingSuggestions == 1 ? "time" : "times"))</span>
+                            }
+                        </td>
                         <td data-label="Deadline">@(ev.RespondBy ?? "none")</td>
                     </tr>
                 }

@@ -53,7 +53,7 @@ public sealed class SchedulingJobsTests
         var expired = await _h.GetAsync(Harness.Rocky, ev);
 
         var reopened = await _h.Service.ProposeMoreSlotsAsync(Harness.Rocky, ev.ShortCode,
-            [new("2026-11-09T10:00", "America/Chicago")], "2026-11-06T17:00", expired.Version, None);
+            [new("2026-11-09T10:00", "America/Chicago")], suggestionIds: null, "2026-11-06T17:00", expired.Version, None);
 
         Assert.AreEqual(EventState.Open, reopened.State);
     }
@@ -102,7 +102,7 @@ public sealed class SchedulingJobsTests
 
         var current = await _h.GetAsync(Harness.Rocky, ev);
         await _h.Service.ProposeMoreSlotsAsync(Harness.Rocky, ev.ShortCode,
-            [new("2026-11-09T10:00", "America/Chicago")], "2026-11-06T17:00", current.Version, None);
+            [new("2026-11-09T10:00", "America/Chicago")], suggestionIds: null, "2026-11-06T17:00", current.Version, None);
         Assert.AreEqual(0, await _h.Jobs.SendRemindersAsync(None), "the new deadline is a week away");
 
         _h.Clock.Reset(Instant.FromUtc(2026, 11, 6, 23, 0) - Duration.FromHours(23)); // Nov 6 17:00 CST

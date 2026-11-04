@@ -114,7 +114,7 @@ public sealed class VotingTests
         await _h.VoteAsync(Harness.Bob, ev, (0, VoteValue.No), (1, VoteValue.No), (2, VoteValue.No));
 
         var more = await _h.Service.ProposeMoreSlotsAsync(Harness.Rocky, ev.ShortCode,
-            [new("2026-11-06T14:00", "America/Chicago")], null, ev.Version, CancellationToken.None);
+            [new("2026-11-06T14:00", "America/Chicago")], suggestionIds: null, null, ev.Version, CancellationToken.None);
         await _h.VoteAsync(Harness.Bob, more, (3, VoteValue.No));
 
         Assert.HasCount(2, CantMakeIt(await _h.OutboxAsync()));

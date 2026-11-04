@@ -163,12 +163,25 @@ public sealed class SchedulingJobs(
         {
             // The local time is the source of truth. Leniently: a time the new rules skip moves forward, and an
             // ambiguous one takes the earlier offset, rather than losing the slot.
-            var start = SlotTimeResolver.GetZone(slot.TimeZoneId).AtLeniently(slot.LocalStart).ToInstant();
+            var start = SlotTimeResolver.ResolveStored(slot.LocalStart, slot.TimeZoneId).Start;
             if (start == slot.Start)
                 continue;
             slot.Start = start;
             moved.Add(slot.EventId);
             count++;
+        }
+
+        // A waiting suggestion keeps the local time it was suggested as, too, so adding it later proposes what was meant.
+        var suggestions = await db.Suggestions
+            .Where(s => s.Start > now && s.Status == SuggestionStatus.Pending)
+            .ToListAsync(cancellationToken);
+        foreach (var suggestion in suggestions)
+        {
+            var start = SlotTimeResolver.ResolveStored(suggestion.LocalStart, suggestion.TimeZoneId).Start;
+            if (start == suggestion.Start)
+                continue;
+            suggestion.Start = start;
+            moved.Add(suggestion.EventId);
         }
 
         if (setting is null)

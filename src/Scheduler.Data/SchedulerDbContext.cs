@@ -17,6 +17,7 @@ public sealed class SchedulerDbContext(DbContextOptions<SchedulerDbContext> opti
     public DbSet<ProposedSlot> Slots => Set<ProposedSlot>();
     public DbSet<Participant> Participants => Set<Participant>();
     public DbSet<Vote> Votes => Set<Vote>();
+    public DbSet<SlotSuggestion> Suggestions => Set<SlotSuggestion>();
     public DbSet<UserAccount> Users => Set<UserAccount>();
     public DbSet<UserEmail> UserEmails => Set<UserEmail>();
     public DbSet<AuditEntry> Audit => Set<AuditEntry>();
@@ -56,6 +57,7 @@ public sealed class SchedulerDbContext(DbContextOptions<SchedulerDbContext> opti
             e.HasOne<UserAccount>().WithMany().HasForeignKey(x => x.OrganizerId).OnDelete(DeleteBehavior.Restrict);
             e.HasMany(x => x.Slots).WithOne().HasForeignKey(s => s.EventId).OnDelete(DeleteBehavior.Cascade);
             e.HasMany(x => x.Participants).WithOne().HasForeignKey(p => p.EventId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(x => x.Suggestions).WithOne().HasForeignKey(s => s.EventId).OnDelete(DeleteBehavior.Cascade);
         });
 
         model.Entity<ProposedSlot>(e =>
@@ -88,6 +90,18 @@ public sealed class SchedulerDbContext(DbContextOptions<SchedulerDbContext> opti
             e.HasOne<ProposedSlot>().WithMany().HasForeignKey(x => x.SlotId).OnDelete(DeleteBehavior.Cascade);
         });
 
+        model.Entity<SlotSuggestion>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.TimeZoneId).HasMaxLength(FieldLimits.TimeZoneIdMax);
+            e.Property(x => x.Status).HasConversion<string>().HasMaxLength(16);
+            e.HasIndex(x => new { x.EventId, x.Start });
+            e.HasOne<Participant>().WithMany().HasForeignKey(x => x.ParticipantId).OnDelete(DeleteBehavior.Cascade);
+            // SlotId has no foreign key: slots are never deleted on their own (a withdrawn one stays, marked), and the
+            // event's deletion removes its suggestions too.
+        });
+
         model.Entity<UserAccount>(e =>
         {
             e.HasKey(x => x.Id);
@@ -117,7 +131,7 @@ public sealed class SchedulerDbContext(DbContextOptions<SchedulerDbContext> opti
             e.HasKey(x => x.Id);
             e.Property(x => x.To).HasMaxLength(FieldLimits.EmailMax);
             e.Property(x => x.ReplyTo).HasMaxLength(FieldLimits.EmailMax);
-            e.Property(x => x.Subject).HasMaxLength(256);
+            e.Property(x => x.Subject).HasMaxLength(FieldLimits.EmailSubjectMax);
             e.Property(x => x.ListUnsubscribeUrl).HasMaxLength(1024);
             e.Property(x => x.Status).HasConversion<string>().HasMaxLength(16);
             e.Property(x => x.LastError).HasMaxLength(2000);

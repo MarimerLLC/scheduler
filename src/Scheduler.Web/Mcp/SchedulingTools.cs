@@ -78,7 +78,7 @@ public sealed class SchedulingTools(ISchedulingService scheduling, IAdminService
         Run(caller => scheduling.ListMyEventsAsync(caller, ParseFilter(filter), cancellationToken));
 
     [McpServerTool(Name = "get_event", Title = "Get scheduling event", ReadOnly = true, Idempotent = true, OpenWorld = false)]
-    [Description("Gets one event: its slots with per-slot vote totals and the user's own votes. The organizer also sees each participant's votes and a ranked recommendation (rank 1 is best). Only no rules a slot out. Recommend a slot with an if_necessary vote only when it is the only way to make any time work, and then tell the organizer who would be stretched by it.")]
+    [Description("Gets one event: its slots with per-slot vote totals and the user's own votes. The organizer also sees each participant's votes and a ranked recommendation (rank 1 is best). Only no rules a slot out. Recommend a slot with an if_necessary vote only when it is the only way to make any time work, and then tell the organizer who would be stretched by it. suggestions are times participants suggested adding (status pending, added or dismissed): the organizer sees everyone's, a participant only their own.")]
     public Task<string> GetEvent(
         [Description("The event's id or shortCode.")] string eventId,
         [Description("Optional IANA zone to add a viewer-local time to every slot.")] string? timeZone = null,
@@ -101,16 +101,42 @@ public sealed class SchedulingTools(ISchedulingService scheduling, IAdminService
             emailReceipt,
             cancellationToken));
 
+    [McpServerTool(Name = "suggest_slots", Title = "Suggest other times", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = true)]
+    [Description("For someone invited, while the event is open: suggests start times that aren't on the poll, e.g. when none of the proposed times work for the user. Emails the organizer, who decides whether to add them to the poll; nothing changes for anyone else until then. Check each time against the user's calendar and confirm with the user first. A time already proposed, or already suggested by the user, isn't suggested again (notices say so), so retrying is safe. get_event shows the user's suggestions and whether each was added.")]
+    public Task<string> SuggestSlots(
+        [Description("The event's id or shortCode.")] string eventId,
+        [Description("Start times to suggest, 1 to 5, each local wall time plus IANA zone (the user's own zone is fine). The meeting length stays the organizer's.")] McpSlot[] slots,
+        CancellationToken cancellationToken = default) =>
+        Run(caller => scheduling.SuggestSlotsAsync(
+            caller, eventId, slots.Select(s => new SlotInput(s.Start, s.TimeZone)).ToList(), cancellationToken));
+
     [McpServerTool(Name = "propose_more_slots", Title = "Propose more times", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = true)]
-    [Description("Organizer only: adds another round of candidate times, e.g. when none of the first round works. Also reopens an expired event, or a finalized one that needs rescheduling. Emails participants about the new times.")]
+    [Description("Organizer only: adds another round of candidate times, e.g. when none of the first round works. Also reopens an expired event, or a finalized one that needs rescheduling. Emails participants about the new times. To add times participants suggested (the suggestions in get_event), pass their suggestionIds rather than repeating the times; check each against the organizer's calendar first, because every proposed time should work for the organizer.")]
     public Task<string> ProposeMoreSlots(
         [Description("The event's id or shortCode.")] string eventId,
-        [Description("New candidate start times, each local wall time plus IANA zone.")] McpSlot[] slots,
         [Description("The event's version from the get_event result you are acting on.")] uint version,
+        [Description("New candidate start times, each local wall time plus IANA zone. Can be omitted when suggestionIds are given.")] McpSlot[]? slots = null,
+        [Description("Optional: suggestionId values from get_event, for suggested times to add to the poll in this round.")] string[]? suggestionIds = null,
         [Description("Optional new voting deadline as local wall time in the organizer's zone. A deadline that has already passed is cleared.")] string? respondBy = null,
         CancellationToken cancellationToken = default) =>
         Run(caller => scheduling.ProposeMoreSlotsAsync(
-            caller, eventId, slots.Select(s => new SlotInput(s.Start, s.TimeZone)).ToList(), respondBy, version, cancellationToken));
+            caller,
+            eventId,
+            (slots ?? []).Select(s => new SlotInput(s.Start, s.TimeZone)).ToList(),
+            (suggestionIds ?? []).Select(id => ToolJson.ParseId(id, "suggestion")).ToList(),
+            respondBy,
+            version,
+            cancellationToken));
+
+    [McpServerTool(Name = "dismiss_suggestions", Title = "Dismiss suggested times", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
+    [Description("Organizer only: decides not to add times participants suggested (the suggestions in get_event). No one is emailed; the person who suggested a time sees that it wasn't added, and can't suggest it again. Confirm with the organizer first.")]
+    public Task<string> DismissSuggestions(
+        [Description("The event's id or shortCode.")] string eventId,
+        [Description("suggestionId values from get_event.")] string[] suggestionIds,
+        [Description("The event's version from the get_event result you are acting on.")] uint version,
+        CancellationToken cancellationToken = default) =>
+        Run(caller => scheduling.DismissSuggestionsAsync(
+            caller, eventId, suggestionIds.Select(id => ToolJson.ParseId(id, "suggestion")).ToList(), version, cancellationToken));
 
     [McpServerTool(Name = "withdraw_slot", Title = "Withdraw a proposed time", ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
     [Description("Organizer only: removes a candidate time that no longer works for the organizer. Its votes are discarded.")]

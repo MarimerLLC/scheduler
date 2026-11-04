@@ -78,6 +78,18 @@ internal sealed class HtmlEmailComposer(
             [nameof(EventEmail.Closing)] = PlainTextEmailComposer.CantMakeAnyTimeClosing(ev, who),
         });
 
+    public Task<ComposedEmail> SlotsSuggestedAsync(SchedulingEvent ev, Participant who, IReadOnlyList<SlotSuggestion> suggestions, string dashboardUrl) =>
+        WithEventHtmlAsync(text.SlotsSuggested(ev, who, suggestions, dashboardUrl), ev.OrganizerEmail, ev, new()
+        {
+            [nameof(EventEmail.Intro)] = PlainTextEmailComposer.SlotsSuggestedIntro(ev, who, suggestions.Count),
+            [nameof(EventEmail.Times)] = PlainTextEmailComposer.SuggestedTimes(suggestions),
+            [nameof(EventEmail.SlotsHeading)] = suggestions.Count == 1 ? "Suggested time" : "Suggested times",
+            [nameof(EventEmail.ActionUrl)] = dashboardUrl,
+            [nameof(EventEmail.ActionLabel)] = suggestions.Count == 1 ? "Add or dismiss it" : "Add or dismiss them",
+            [nameof(EventEmail.Closing)] = PlainTextEmailComposer.SlotsSuggestedClosing +
+                $" Or ask your assistant to review the suggested times for scheduling event {ev.ShortCode}.",
+        });
+
     public Task<ComposedEmail> AllRespondedAsync(SchedulingEvent ev, string dashboardUrl) =>
         WithEventHtmlAsync(text.AllResponded(ev, dashboardUrl), ev.OrganizerEmail, ev, new()
         {

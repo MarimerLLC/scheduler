@@ -141,7 +141,8 @@ public sealed class SchedulingService(
                 NeedsMyVote: NeedsVote(e, emails),
                 e.RespondBy is { } by ? SlotTimeFormatter.Display(by, e.OrganizerTimeZone) : null,
                 Responded: e.OrganizerId == accountId ? e.Participants.Count(p => p.RespondedAt is not null) : null,
-                Invited: e.OrganizerId == accountId ? e.Participants.Count : null))
+                Invited: e.OrganizerId == accountId ? e.Participants.Count : null,
+                PendingSuggestions: e.OrganizerId == accountId ? e.Suggestions.Count(s => s.Status == SuggestionStatus.Pending) : null))
             .Where(s => filter != EventListFilter.NeedsMyVote || s.NeedsMyVote)
             .OrderByDescending(s => s.NeedsMyVote)
             .ToList();
@@ -282,7 +283,173 @@ public sealed class SchedulingService(
         return null;
     }
 
-    public async Task<EventView> ProposeMoreSlotsAsync(CallerIdentity caller, string eventRef, IReadOnlyList<SlotInput> slots, string? respondBy, uint expectedVersion, CancellationToken cancellationToken)
+    public async Task<EventView> SuggestSlotsAsync(CallerIdentity caller, string eventRef, IReadOnlyList<SlotInput> slots, CancellationToken cancellationToken)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+        var now = clock.GetCurrentInstant();
+        var account = await FindAccountAsync(db, caller, cancellationToken);
+        var ev = await LoadEventAsync(db, eventRef, tracking: true, cancellationToken);
+        var access = Authorize(ev, caller, account);
+
+        if (access.Me.Count == 0)
+            throw new SchedulingValidationException(
+                "You're the organizer. Propose more times instead: suggestions are for the people invited.");
+        if (ev.State != EventState.Open)
+            throw new SchedulingConflictException(
+                $"This event is {ev.State.ToString().ToLowerInvariant()} and isn't taking suggestions.");
+        if (slots is null || slots.Count == 0)
+            throw new SchedulingValidationException("Suggest at least one time.");
+        if (slots.Count > FieldLimits.MaxPendingSuggestionsPerParticipant)
+            throw new SchedulingValidationException(
+                $"Suggest at most {FieldLimits.MaxPendingSuggestionsPerParticipant} times at once.");
+
+        // One person's suggestions are checked and saved one call at a time: a double submit, or a retry racing the first
+        // try, would otherwise both pass the duplicate and limit checks below. This locks the caller's participant rows,
+        // not the event's, so the organizer's version doesn't move; then it reads the suggestions saved meanwhile.
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var myIds = access.Me.Select(p => p.Id).Order().ToArray();
+        await db.Database.ExecuteSqlAsync(
+            $"SELECT 1 FROM \"Participants\" WHERE \"Id\" = ANY({myIds}) ORDER BY \"Id\" FOR UPDATE", cancellationToken);
+        await db.Suggestions.Where(s => s.EventId == ev.Id).LoadAsync(cancellationToken);
+
+        var mine = myIds.ToHashSet();
+        var earlier = ev.Suggestions.Where(s => mine.Contains(s.ParticipantId)).ToList();
+        var suggester = access.Me.OrderBy(p => p.Email, StringComparer.Ordinal).First();
+        var notices = new List<string>();
+        var added = new List<SlotSuggestion>();
+        var seen = new HashSet<Instant>();
+        foreach (var input in slots)
+        {
+            var time = SlotTimeResolver.Resolve(input?.Start, input?.TimeZone);
+            var display = SlotTimeFormatter.Display(time.Start, ev.OrganizerTimeZone);
+            if (time.Start <= now)
+                throw new SchedulingValidationException($"{display} is in the past.");
+            if (!seen.Add(time.Start))
+                continue;
+            if (ev.ActiveSlots.Any(s => s.Start == time.Start))
+            {
+                notices.Add($"{display} is already one of the proposed times, so it wasn't suggested. Answer it instead.");
+                continue;
+            }
+            if (earlier.Where(s => s.Start == time.Start).MaxBy(s => s.SuggestedAt) is { } before)
+            {
+                notices.Add(before.Status switch
+                {
+                    SuggestionStatus.Pending => $"You already suggested {display}; it's waiting for the organizer.",
+                    SuggestionStatus.Dismissed => $"The organizer decided not to add {display}, so it wasn't suggested again.",
+                    _ => $"The organizer added {display} and then withdrew it, so it wasn't suggested again.",
+                });
+                continue;
+            }
+
+            added.Add(new SlotSuggestion
+            {
+                EventId = ev.Id,
+                ParticipantId = suggester.Id,
+                LocalStart = time.LocalStart,
+                TimeZoneId = time.TimeZoneId,
+                Start = time.Start,
+                SuggestedAt = now,
+            });
+        }
+
+        var waiting = earlier.Count(s => s.Status == SuggestionStatus.Pending && s.Start > now);
+        if (waiting + added.Count > FieldLimits.MaxPendingSuggestionsPerParticipant)
+            throw new SchedulingValidationException(
+                $"You can have at most {FieldLimits.MaxPendingSuggestionsPerParticipant} suggested times waiting for the organizer, " +
+                $"and {waiting} of yours already are. Wait for the organizer to add or dismiss them, or suggest fewer.");
+
+        if (added.Count > 0)
+        {
+            ev.Suggestions.AddRange(added);
+            db.Suggestions.AddRange(added);
+            Audit(db, ev, caller, "slots.suggested", new { suggestions = added.Count }, now);
+            QueueEmail(db, ev, ev.OrganizerEmail, await composer.SlotsSuggestedAsync(ev, suggester, added, DashboardUrl(ev)), now, replyToOrganizer: false);
+            notices.Insert(0, added.Count == 1
+                ? "Your suggested time was sent to the organizer, who decides whether to add it to the poll."
+                : $"Your {added.Count} suggested times were sent to the organizer, who decides whether to add them to the poll.");
+            // Nothing here touches the event row, so there is no version to conflict on. Open pages hear about it once
+            // it is committed.
+            await db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            changes.Publish(ev.Id);
+        }
+        return ToView(ev, caller, account, viewerTimeZone: null, notices);
+    }
+
+    public async Task<EventView> DismissSuggestionsAsync(CallerIdentity caller, string eventRef, IReadOnlyList<Guid> suggestionIds, uint expectedVersion, CancellationToken cancellationToken)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+        var now = clock.GetCurrentInstant();
+        var account = await FindAccountAsync(db, caller, cancellationToken);
+        var ev = await LoadEventAsync(db, eventRef, tracking: true, cancellationToken);
+        RequireOrganizer(Authorize(ev, caller, account));
+        CheckVersion(db, ev, expectedVersion);
+
+        if (suggestionIds is null || suggestionIds.Count == 0)
+            throw new SchedulingValidationException("Name at least one suggested time to dismiss.");
+
+        var dismissed = 0;
+        foreach (var suggestion in ChooseSuggestions(ev, suggestionIds))
+        {
+            if (suggestion.Status == SuggestionStatus.Added)
+                throw new SchedulingValidationException(
+                    $"{SlotTimeFormatter.Display(suggestion.Start, ev.OrganizerTimeZone)} is already on the poll. Withdraw that time instead.");
+            if (suggestion.Status == SuggestionStatus.Dismissed)
+                continue;
+            suggestion.Status = SuggestionStatus.Dismissed;
+            suggestion.DecidedAt = now;
+            dismissed++;
+        }
+
+        if (dismissed > 0)
+        {
+            Touch(db, ev, now);
+            Audit(db, ev, caller, "suggestions.dismissed", new { suggestions = dismissed }, now);
+            await SaveAsync(db, ev, cancellationToken);
+        }
+        return ToView(ev, caller, account, viewerTimeZone: null, notices: null);
+    }
+
+    /// <summary>The event's suggestions with these IDs, each once. An ID that isn't one of them is refused.</summary>
+    private static List<SlotSuggestion> ChooseSuggestions(SchedulingEvent ev, IReadOnlyList<Guid>? suggestionIds)
+    {
+        var chosen = new List<SlotSuggestion>();
+        foreach (var id in (suggestionIds ?? []).Distinct())
+        {
+            chosen.Add(ev.Suggestions.FirstOrDefault(s => s.Id == id)
+                ?? throw new SchedulingValidationException(
+                    $"{id} isn't one of this event's suggested times. Call get_event for the current suggestion IDs."));
+        }
+        return chosen;
+    }
+
+    /// <summary>
+    /// Marks the suggestions that the newly added <paramref name="slots"/> put on the poll: the ones the organizer
+    /// chose (at the time each resolves to now), and any other waiting suggestion of the same time.
+    /// </summary>
+    private static void MarkSuggestionsAdded(SchedulingEvent ev, IReadOnlyList<ProposedSlot> slots, IReadOnlyList<(SlotSuggestion Suggestion, SlotTime Time)> chosen, Instant now)
+    {
+        foreach (var (suggestion, time) in chosen)
+        {
+            suggestion.Start = time.Start;
+            Mark(suggestion, slots.Single(slot => slot.Start == time.Start));
+        }
+        foreach (var suggestion in ev.Suggestions.Where(s => s.Status == SuggestionStatus.Pending))
+        {
+            if (slots.FirstOrDefault(slot => slot.Start == suggestion.Start) is { } slot)
+                Mark(suggestion, slot);
+        }
+
+        void Mark(SlotSuggestion suggestion, ProposedSlot slot)
+        {
+            suggestion.Status = SuggestionStatus.Added;
+            suggestion.SlotId = slot.Id;
+            suggestion.DecidedAt = now;
+        }
+    }
+
+    public async Task<EventView> ProposeMoreSlotsAsync(CallerIdentity caller, string eventRef, IReadOnlyList<SlotInput>? slots, IReadOnlyList<Guid>? suggestionIds, string? respondBy, uint expectedVersion, CancellationToken cancellationToken)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
         var now = clock.GetCurrentInstant();
@@ -297,9 +464,26 @@ public sealed class SchedulingService(
         else
             ev.EnsureEditable();
 
+        var suggested = ChooseSuggestions(ev, suggestionIds);
+        var alreadyAdded = suggested.FirstOrDefault(s => s.Status == SuggestionStatus.Added);
+        if (alreadyAdded is not null)
+            throw new SchedulingValidationException(
+                $"The suggested time {SlotTimeFormatter.Display(alreadyAdded.Start, ev.OrganizerTimeZone)} was already added to the poll.");
+
         var round = ev.Slots.Count == 0 ? 1 : ev.Slots.Max(s => s.Round) + 1;
-        var added = AddSlots(ev, slots, round, now);
+        // The organizer's own times are checked strictly. A suggested time is resolved from its stored local time the way
+        // the time-zone job does (seconds and all), since it was valid when suggested. One already in this round (the
+        // organizer's own, or two people suggesting the same moment) is proposed once.
+        var times = ResolveSlots(slots);
+        var chosen = suggested.Select(s => (Suggestion: s, Time: SlotTimeResolver.ResolveStored(s.LocalStart, s.TimeZoneId))).ToList();
+        foreach (var (_, time) in chosen)
+        {
+            if (times.All(t => t.Start != time.Start))
+                times.Add(time);
+        }
+        var added = AddSlots(ev, times, round, now);
         db.Slots.AddRange(added);
+        MarkSuggestionsAdded(ev, added, chosen, now);
 
         var notices = new List<string>();
         if (!string.IsNullOrWhiteSpace(respondBy))
@@ -316,7 +500,7 @@ public sealed class SchedulingService(
             UpdateResponded(ev, participant, now);
 
         Touch(db, ev, now);
-        Audit(db, ev, caller, rescheduling ? "event.rescheduling" : "slots.proposed", new { round, slots = added.Count }, now);
+        Audit(db, ev, caller, rescheduling ? "event.rescheduling" : "slots.proposed", new { round, slots = added.Count, suggestions = suggested.Count }, now);
         if (ev.State == EventState.Open)
         {
             foreach (var participant in ev.Participants)
@@ -637,6 +821,7 @@ public sealed class SchedulingService(
         db.Events
             .Include(e => e.Slots)
             .Include(e => e.Participants).ThenInclude(p => p.Votes)
+            .Include(e => e.Suggestions)
             .AsSplitQuery();
 
     private static async Task<SchedulingEvent> LoadEventAsync(SchedulerDbContext db, string? eventRef, bool tracking, CancellationToken cancellationToken)
@@ -708,17 +893,23 @@ public sealed class SchedulingService(
 
     // ── Validation and building ─────────────────────────────────────────────
 
-    private static List<ProposedSlot> AddSlots(SchedulingEvent ev, IReadOnlyList<SlotInput>? inputs, int round, Instant now)
+    private static List<ProposedSlot> AddSlots(SchedulingEvent ev, IReadOnlyList<SlotInput>? inputs, int round, Instant now) =>
+        AddSlots(ev, ResolveSlots(inputs), round, now);
+
+    /// <summary>Times given as input, resolved strictly: a time that doesn't exist or happens twice is refused.</summary>
+    private static List<SlotTime> ResolveSlots(IReadOnlyList<SlotInput>? inputs) =>
+        (inputs ?? []).Select(input => SlotTimeResolver.Resolve(input?.Start, input?.TimeZone)).ToList();
+
+    private static List<ProposedSlot> AddSlots(SchedulingEvent ev, IReadOnlyList<SlotTime> times, int round, Instant now)
     {
-        if (inputs is null || inputs.Count == 0)
+        if (times.Count == 0)
             throw new SchedulingValidationException("Propose at least one time.");
-        if (ev.ActiveSlots.Count() + inputs.Count > FieldLimits.MaxSlotsPerEvent)
+        if (ev.ActiveSlots.Count() + times.Count > FieldLimits.MaxSlotsPerEvent)
             throw new SchedulingValidationException($"An event can have at most {FieldLimits.MaxSlotsPerEvent} proposed times.");
 
         var added = new List<ProposedSlot>();
-        foreach (var input in inputs)
+        foreach (var time in times)
         {
-            var time = SlotTimeResolver.Resolve(input?.Start, input?.TimeZone);
             var display = SlotTimeFormatter.Display(time.Start, time.TimeZoneId);
             if (time.Start <= now)
                 throw new SchedulingValidationException($"{display} is in the past.");
@@ -929,6 +1120,21 @@ public sealed class SchedulingService(
                 : new ParticipantView(p.Email, p.DisplayName, p.Role, null, null, null))
             .ToList();
 
+        // The organizer sees every suggestion and who made it; a participant sees only their own.
+        var suggestions = ev.Suggestions
+            .Select(s => (Suggestion: s, By: ev.Participants.FirstOrDefault(p => p.Id == s.ParticipantId)))
+            .Where(x => x.By is not null && (isOrganizer || me.Contains(x.By)))
+            .OrderBy(x => x.Suggestion.Start)
+            .Select(x => new SuggestionView(
+                x.Suggestion.Id,
+                SlotTimeFormatter.Utc(x.Suggestion.Start),
+                SlotTimeFormatter.Display(x.Suggestion.Start, ev.OrganizerTimeZone),
+                SlotTimeFormatter.Display(x.Suggestion.Start, x.Suggestion.TimeZoneId),
+                x.Suggestion.Status,
+                x.By!.Email,
+                x.By.DisplayName))
+            .ToList();
+
         return new EventView(
             ev.Id,
             ev.ShortCode,
@@ -945,6 +1151,7 @@ public sealed class SchedulingService(
             isOrganizer,
             slots,
             participants,
-            notices is { Count: > 0 } ? notices : null);
+            notices is { Count: > 0 } ? notices : null,
+            suggestions.Count > 0 ? suggestions : null);
     }
 }

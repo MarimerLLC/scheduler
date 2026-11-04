@@ -23,6 +23,9 @@ internal static class SchedulerMcpOptions
            the only way to make any time work, and tell the user who would be stretched by it. When ready, call
            finalize_event, create the meeting in the user's own calendar using the returned local start and
            time zone, then call record_calendar_event.
+        5. Participants can suggest times that aren't on the poll; get_event lists them under suggestions, and the
+           organizer is emailed about each. Check a suggested time against the user's calendar and ask the user.
+           To add it, call propose_more_slots with its suggestionId; otherwise call dismiss_suggestions.
 
         Questions from the server: if create_event or cancel_event is missing something (a cancel reason, the
         invite list, candidate times, a time zone, a title, or a description for a very short title), a client
@@ -34,6 +37,8 @@ internal static class SchedulerMcpOptions
         1. Call list_my_events; by default it returns the events waiting for the user's vote.
         2. For each, check every slot against the user's calendar and confirm the answers with the user.
         3. Call vote. Voting again replaces the earlier answers, so retrying is safe.
+        4. If none of the times work, offer to suggest others: find free times on the user's calendar, confirm
+           them with the user, and call suggest_slots. The organizer decides whether to add them.
 
         Watching an event: each event is a resource, scheduler://events/{shortCode} (what get_event returns), and
         scheduler://events/{shortCode}/status changes only at milestones (everyone required has responded,

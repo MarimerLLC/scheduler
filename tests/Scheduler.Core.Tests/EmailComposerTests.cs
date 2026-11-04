@@ -26,6 +26,58 @@ public sealed class EmailComposerTests
     }
 
     [TestMethod]
+    public void ASuggestedTimeIsShownToTheOrganizerInTheirZone()
+    {
+        var ev = TestEvents.WithSlots(1);
+        var bob = ev.AddParticipant("bob@example.com");
+        bob.DisplayName = "Bob";
+        var suggestion = new SlotSuggestion
+        {
+            EventId = ev.Id,
+            ParticipantId = bob.Id,
+            TimeZoneId = "Europe/London",
+            LocalStart = new LocalDateTime(2026, 11, 9, 15, 0),
+            Start = Instant.FromUtc(2026, 11, 9, 15, 0),
+        };
+
+        var email = Composer.SlotsSuggested(ev, bob, [suggestion], "https://sched.test/events/1");
+
+        Assert.AreEqual($"[sched:{ev.ShortCode}] Bob suggested another time: Planning", email.Subject);
+        StringAssert.Contains(email.TextBody, "Bob (bob@example.com) suggested a time for \"Planning\" that isn't on the poll:");
+        StringAssert.Contains(email.TextBody, "  - Mon Nov 9, 9:00 AM CST (UTC-06:00)");
+        StringAssert.Contains(email.TextBody, "Nothing changes unless you add a time.");
+        StringAssert.Contains(email.TextBody, "Add or dismiss it here: https://sched.test/events/1");
+        StringAssert.Contains(email.TextBody, $"scheduling event {ev.ShortCode}");
+    }
+
+    [TestMethod]
+    public void SubjectsFitTheOutboxEvenWithTheLongestNameAndTitle()
+    {
+        var ev = TestEvents.WithSlots(1);
+        ev.Title = new string('T', FieldLimits.TitleMax);
+        ev.OrganizerName = new string('O', FieldLimits.DisplayNameMax);
+        ev.RespondBy = Instant.FromUtc(2026, 10, 30, 22, 0);
+        var bob = ev.AddParticipant("bob@example.com");
+        bob.DisplayName = new string('B', FieldLimits.DisplayNameMax);
+        var suggestion = new SlotSuggestion { TimeZoneId = "America/Chicago", Start = Instant.FromUtc(2026, 11, 9, 15, 0) };
+
+        var subjects = new[]
+        {
+            Composer.SlotsSuggested(ev, bob, [suggestion, suggestion], "https://sched.test/events/1").Subject,
+            Composer.CantMakeAnyTime(ev, bob, "https://sched.test/events/1").Subject,
+            Composer.Invitation(ev, bob, "https://sched.test/e/x").Subject,
+        };
+
+        foreach (var subject in subjects)
+        {
+            Assert.IsLessThanOrEqualTo(FieldLimits.EmailSubjectMax, subject.Length, subject);
+            StringAssert.StartsWith(subject, $"[sched:{ev.ShortCode}] ");
+            StringAssert.EndsWith(subject, "…");
+        }
+        StringAssert.Contains(Composer.SlotsSuggested(ev, bob, [suggestion], "https://sched.test/events/1").TextBody, ev.Title, "the body has it in full");
+    }
+
+    [TestMethod]
     public void OrganizerTextIsQuotedNotPresentedAsInstructions()
     {
         var ev = TestEvents.WithSlots(1);

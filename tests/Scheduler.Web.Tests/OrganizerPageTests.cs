@@ -102,6 +102,35 @@ public sealed class OrganizerPageTests
     }
 
     [TestMethod]
+    public async Task The_event_page_adds_or_dismisses_suggested_times()
+    {
+        var ev = await CreateEventAsync();
+        var day = SystemClock.Instance.GetCurrentInstant().InUtc().Date.PlusDays(12);
+        using (var suggesting = _app.Services.CreateScope())
+        {
+            await suggesting.ServiceProvider.GetRequiredService<ISchedulingService>().SuggestSlotsAsync(
+                new CallerIdentity(null, ["bob@example.com"], Channel.Web), ev.ShortCode,
+                [new($"{day:yyyy-MM-dd}T15:00", "America/Chicago"), new($"{day.PlusDays(1):yyyy-MM-dd}T15:00", "America/Chicago")],
+                CancellationToken.None);
+        }
+
+        using var scope = _app.Services.CreateScope();
+        await using var bunit = NewBunit(scope, "rocky@example.com");
+        var page = bunit.Render<EventDetails>(p => p.Add(e => e.Id, ev.Id));
+        page.WaitForAssertion(() => StringAssert.Contains(page.Markup, "Suggested times"));
+        Assert.HasCount(2, page.FindAll("table.suggestions tbody tr"));
+        StringAssert.Contains(page.Find("table.suggestions").TextContent, "Bob");
+
+        page.FindAll("table.suggestions button:contains('Add to the poll')")[0].Click();
+        page.WaitForAssertion(() => StringAssert.Contains(page.Markup, "to the poll and emailed everyone invited about it."));
+        Assert.HasCount(4, page.FindAll("table.slots tbody tr"));
+
+        page.Find("table.suggestions button:contains('Dismiss')").Click();
+        page.WaitForAssertion(() => StringAssert.Contains(page.Markup, "Dismissed the suggested time"));
+        Assert.IsEmpty(page.FindAll("table.suggestions"), "nothing left waiting");
+    }
+
+    [TestMethod]
     public async Task A_participant_on_the_event_page_is_sent_to_the_voting_page_and_a_stranger_sees_nothing()
     {
         var ev = await CreateEventAsync();

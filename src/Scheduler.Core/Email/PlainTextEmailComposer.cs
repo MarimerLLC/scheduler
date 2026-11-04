@@ -86,6 +86,20 @@ public sealed class PlainTextEmailComposer(string mcpUrl, IUnsubscribeLinks? uns
         return EventEmail(ev.OrganizerEmail, Subject(ev, $"{ParticipantName(who)} can't make any time: {ev.Title}"), body);
     }
 
+    public ComposedEmail SlotsSuggested(SchedulingEvent ev, Participant who, IReadOnlyList<SlotSuggestion> suggestions, string dashboardUrl)
+    {
+        var body = new StringBuilder();
+        body.AppendLine(SlotsSuggestedIntro(ev, who, suggestions.Count));
+        body.AppendLine();
+        foreach (var start in SuggestedTimes(suggestions))
+            body.AppendLine($"  - {SlotTimeFormatter.Display(start, ev.OrganizerTimeZone)}");
+        body.AppendLine();
+        body.AppendLine(SlotsSuggestedClosing);
+        body.AppendLine($"Add or dismiss {(suggestions.Count == 1 ? "it" : "them")} here: {dashboardUrl}");
+        body.AppendLine($"Or ask your assistant to review the suggested times for scheduling event {ev.ShortCode}.");
+        return EventEmail(ev.OrganizerEmail, Subject(ev, SlotsSuggestedSubject(ev, who, suggestions.Count)), body);
+    }
+
     public ComposedEmail AllResponded(SchedulingEvent ev, string dashboardUrl)
     {
         var body = new StringBuilder();
@@ -195,6 +209,9 @@ public sealed class PlainTextEmailComposer(string mcpUrl, IUnsubscribeLinks? uns
     Task<ComposedEmail> IEmailComposer.CantMakeAnyTimeAsync(SchedulingEvent ev, Participant who, string dashboardUrl) =>
         Task.FromResult(CantMakeAnyTime(ev, who, dashboardUrl));
 
+    Task<ComposedEmail> IEmailComposer.SlotsSuggestedAsync(SchedulingEvent ev, Participant who, IReadOnlyList<SlotSuggestion> suggestions, string dashboardUrl) =>
+        Task.FromResult(SlotsSuggested(ev, who, suggestions, dashboardUrl));
+
     Task<ComposedEmail> IEmailComposer.AllRespondedAsync(SchedulingEvent ev, string dashboardUrl) =>
         Task.FromResult(AllResponded(ev, dashboardUrl));
 
@@ -270,7 +287,22 @@ public sealed class PlainTextEmailComposer(string mcpUrl, IUnsubscribeLinks? uns
 
     public const string SignInLinkSubject = "Your sign-in link for the scheduling server";
 
-    public static string AddressVerificationSubject(string email) => $"Confirm {email} for the scheduling server";
+    public static string AddressVerificationSubject(string email) => FitSubject($"Confirm {email} for the scheduling server");
+
+    /// <summary>
+    /// A subject cut to what the outbox stores (<see cref="FieldLimits.EmailSubjectMax"/>). Names, addresses and titles
+    /// are each within their own limits, but together they can be longer, and an over-long subject would fail the whole
+    /// change that queued the email. The body always has them in full.
+    /// </summary>
+    public static string FitSubject(string subject)
+    {
+        if (subject.Length <= FieldLimits.EmailSubjectMax)
+            return subject;
+        var cut = FieldLimits.EmailSubjectMax - 1;
+        if (char.IsHighSurrogate(subject[cut - 1]))
+            cut--;
+        return subject[..cut] + "…";
+    }
 
     public static string OrganizerName(SchedulingEvent ev) => ev.OrganizerName ?? ev.OrganizerEmail;
 
@@ -290,6 +322,21 @@ public sealed class PlainTextEmailComposer(string mcpUrl, IUnsubscribeLinks? uns
     public static string CantMakeAnyTimeClosing(SchedulingEvent ev, Participant who) =>
         (who.Note is null ? "" : "They left you a note; read it on the event page. ") +
         $"To keep going, propose more times, or ask your assistant to propose more times for scheduling event {ev.ShortCode}.";
+
+    public static string SlotsSuggestedSubject(SchedulingEvent ev, Participant who, int count) =>
+        $"{ParticipantName(who)} suggested {(count == 1 ? "another time" : $"{count} other times")}: {ev.Title}";
+
+    public static string SlotsSuggestedIntro(SchedulingEvent ev, Participant who, int count) =>
+        $"{ParticipantName(who)} ({who.Email}) suggested {(count == 1 ? "a time" : "times")} for \"{ev.Title}\" " +
+        $"that {(count == 1 ? "isn't" : "aren't")} on the poll:";
+
+    public const string SlotsSuggestedClosing =
+        "Nothing changes unless you add a time. Check your calendar first: add one that works for you and everyone invited " +
+        "is emailed about it, or dismiss it.";
+
+    /// <summary>The suggested start times, earliest first.</summary>
+    public static IReadOnlyList<NodaTime.Instant> SuggestedTimes(IEnumerable<SlotSuggestion> suggestions) =>
+        suggestions.Select(s => s.Start).Order().ToList();
 
     public static string NewSlotsIntro(SchedulingEvent ev, bool rescheduling) => rescheduling
         ? $"{OrganizerName(ev)} needs to reschedule and has proposed new times."
@@ -335,7 +382,7 @@ public sealed class PlainTextEmailComposer(string mcpUrl, IUnsubscribeLinks? uns
         return new ComposedEmail(subject, body.ToString(), ListUnsubscribeUrl: unsubscribe.OneClickUrl(to));
     }
 
-    private static string Subject(SchedulingEvent ev, string text) => $"[sched:{ev.ShortCode}] {text}";
+    private static string Subject(SchedulingEvent ev, string text) => FitSubject($"[sched:{ev.ShortCode}] {text}");
 
     private static string Deadline(SchedulingEvent ev) =>
         ev.RespondBy is { } by ? $" (vote by {SlotTimeFormatter.Display(by, ev.OrganizerTimeZone)})" : "";

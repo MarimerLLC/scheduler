@@ -110,6 +110,57 @@ public sealed partial class VotingPageTests
     }
 
     [TestMethod]
+    public async Task A_participant_suggests_other_times_from_the_voting_page()
+    {
+        var ev = await CreateEventAsync();
+        var browser = _app.CreateBrowser();
+        await browser.Http.GetAsync(VotingLinkIn((await _app.OutboxAsync()).Single(o => o.To == "bob@example.com")));
+        var day = SystemClock.Instance.GetCurrentInstant().InUtc().Date.PlusDays(12);
+
+        var html = await TextOf(await browser.Http.GetAsync($"/e/{ev.ShortCode}"));
+        StringAssert.Contains(html, "None of these work?");
+        StringAssert.Contains(html, "name=\"suggest-zone\" value=\"America/Chicago\"", "the organizer's zone until the script fills in the viewer's");
+
+        var response = await browser.SubmitFormAsync($"/e/{ev.ShortCode}", "suggest",
+            ("suggest-0", $"{day:yyyy-MM-dd}T09:00"),
+            ("suggest-1", ""),
+            ("suggest-zone", "America/New_York"));
+        html = await TextOf(response);
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode, html);
+        StringAssert.Contains(html, "class=\"notice notice-success\"");
+        StringAssert.Contains(html, "Your suggested time was sent to the organizer");
+        StringAssert.Contains(html, "waiting for the organizer");
+        Assert.IsNull(await VotesOfAsync("bob@example.com"), "suggesting doesn't vote");
+
+        var organizer = await GetAsOrganizerAsync(ev);
+        var suggestion = organizer.Suggestions!.Single();
+        Assert.AreEqual("bob@example.com", suggestion.SuggestedBy);
+        StringAssert.Contains(suggestion.SuggestedLocal, "9:00 AM E", "in the zone it was suggested in");
+
+        var email = (await _app.OutboxAsync()).Single(o => o.Subject.Contains("suggested another time", StringComparison.Ordinal));
+        Assert.AreEqual("rocky@example.com", email.To);
+        StringAssert.Contains(email.TextBody, suggestion.OrganizerLocal);
+        Assert.IsNotNull(email.HtmlBody);
+        StringAssert.Contains(email.HtmlBody, WebUtility.HtmlEncode(suggestion.OrganizerLocal));
+        StringAssert.Contains(email.HtmlBody, $"/events/{ev.Id}");
+
+        response = await browser.SubmitFormAsync($"/e/{ev.ShortCode}", "suggest", ("suggest-zone", "America/Chicago"));
+        StringAssert.Contains(await TextOf(response), "Enter at least one time to suggest.");
+
+        // After voting closes, Bob still sees what the organizer decided.
+        using (var scope = _app.Services.CreateScope())
+        {
+            var scheduling = scope.ServiceProvider.GetRequiredService<ISchedulingService>();
+            var dismissed = await scheduling.DismissSuggestionsAsync(Organizer, ev.ShortCode, [suggestion.SuggestionId], organizer.Version, CancellationToken.None);
+            await scheduling.FinalizeAsync(Organizer, ev.ShortCode, ev.Slots[0].SlotId, dismissed.Version, CancellationToken.None);
+        }
+        html = await TextOf(await browser.Http.GetAsync($"/e/{ev.ShortCode}"));
+        StringAssert.Contains(html, "picked");
+        Assert.DoesNotContain("None of these work?", html);
+        StringAssert.Contains(html, "not added by the organizer");
+    }
+
+    [TestMethod]
     public async Task Saving_without_an_answer_shows_an_error_notice_and_saves_nothing()
     {
         var ev = await CreateEventAsync();

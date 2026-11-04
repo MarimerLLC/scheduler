@@ -109,6 +109,28 @@ else if (_event is not null)
 
             <button type="submit">Save my answers</button>
         </form>
+
+        <h2>None of these work?</h2>
+        <p class="hint">
+            Suggest other start times. The organizer is emailed and decides whether to add them to the poll for everyone;
+            until then nothing changes.
+        </p>
+        @MySuggestions
+        <form method="post" @formname="suggest" @onsubmit="SuggestAsync" class="vote-form">
+            <AntiforgeryToken />
+            <div class="slot-inputs">
+                @for (var i = 0; i < SuggestionFields; i++)
+                {
+                    <input type="datetime-local" name="@SuggestionField(i)" aria-label="Suggested time @(i + 1)" />
+                }
+            </div>
+            <label class="note">
+                <span>Time zone of these times</span>
+                @* The organizer's zone without JavaScript; app.js puts in the viewer's own. *@
+                <input name="suggest-zone" value="@_event.OrganizerTimeZone" maxlength="@FieldLimits.TimeZoneIdMax" data-viewer-zone />
+            </label>
+            <button type="submit">Suggest these times</button>
+        </form>
     }
     else
     {
@@ -122,6 +144,8 @@ else if (_event is not null)
                 </li>
             }
         </ul>
+        @* Voting has closed, but the organizer may still have added or dismissed a time this person suggested. *@
+        @MySuggestions
     }
 }
 
@@ -224,6 +248,65 @@ else if (_event is not null)
             _notice = Notice.Error(ex.Message);
         }
     }
+
+    private async Task SuggestAsync()
+    {
+        if (_caller is null || _event is null || !CanVote)
+            return;
+
+        var form = HttpContext.Request.Form;
+        var zone = form["suggest-zone"].ToString();
+        var slots = Enumerable.Range(0, SuggestionFields)
+            .Select(i => form[SuggestionField(i)].ToString())
+            .Where(start => !string.IsNullOrWhiteSpace(start))
+            .Select(start => new SlotInput(start, zone))
+            .ToList();
+        if (slots.Count == 0)
+        {
+            _notice = Notice.Error("Enter at least one time to suggest.");
+            return;
+        }
+
+        try
+        {
+            _event = await Scheduling.SuggestSlotsAsync(_caller, Code, slots, CancellationToken.None);
+            _notice = Notice.Success(string.Join(" ", _event.Notices ?? []));
+        }
+        catch (SchedulingException ex)
+        {
+            _notice = Notice.Error(ex.Message);
+        }
+    }
+
+    /// <summary>The times this participant suggested and what the organizer decided; nothing for the organizer.</summary>
+    private RenderFragment MySuggestions => @<text>
+        @if (_event is { IsOrganizer: false, Suggestions.Count: > 0 })
+        {
+            <p>Times you suggested:</p>
+            <ul class="slot-totals">
+                @foreach (var suggestion in _event.Suggestions)
+                {
+                    <li>
+                        <strong>@suggestion.OrganizerLocal</strong>
+                        <time datetime="@suggestion.StartUtc" data-viewer-local data-zone="@_event.OrganizerTimeZone" hidden></time>
+                        <span class="hint">@SuggestionLabel(suggestion.Status)</span>
+                    </li>
+                }
+            </ul>
+        }
+    </text>;
+
+    /// <summary>How many times the page offers to suggest at once; suggesting again adds more.</summary>
+    private const int SuggestionFields = 3;
+
+    private static string SuggestionField(int index) => "suggest-" + index;
+
+    private static string SuggestionLabel(SuggestionStatus status) => status switch
+    {
+        SuggestionStatus.Added => "added to the poll",
+        SuggestionStatus.Dismissed => "not added by the organizer",
+        _ => "waiting for the organizer",
+    };
 
     private static string SlotField(Guid slotId) => "slot-" + slotId.ToString("N");
 
