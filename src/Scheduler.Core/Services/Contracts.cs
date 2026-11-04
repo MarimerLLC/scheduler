@@ -124,6 +124,31 @@ public sealed record EventView(
     IReadOnlyList<SuggestionView>? Suggestions = null);
 
 /// <summary>
+/// An event's milestones: what the organizer emails mark, for agents that watch an event instead of reading
+/// every vote. <see cref="Marker"/> changes exactly when one of the other fields does, so comparing it with the
+/// last one seen says whether anything happened, also across reconnects.
+/// </summary>
+/// <param name="EveryoneResponded">
+/// Organizer only: every required participant (every participant, if none is required) has answered every
+/// current time. Null for participants, who never see others' response status.
+/// </param>
+/// <param name="RulesOutEveryTime">
+/// Organizer only: the required participants whose answers are no on every current time, sorted. Null for
+/// participants, who never see others' votes.
+/// </param>
+/// <param name="Marker">A short hash of the other milestone fields.</param>
+public sealed record EventStatusView(
+    Guid Id,
+    string ShortCode,
+    EventState State,
+    string? RespondBy,
+    Guid? FinalizedSlotId,
+    bool IsOrganizer,
+    bool? EveryoneResponded,
+    IReadOnlyList<string>? RulesOutEveryTime,
+    string Marker);
+
+/// <summary>
 /// The result of resending invitations: the event, and the addresses the invitation was queued for. Anyone
 /// asked for but skipped (unsubscribed, bounced, or sent it too recently) is explained in the event's notices.
 /// </summary>

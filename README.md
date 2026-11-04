@@ -33,6 +33,8 @@ invitation email.
 Version 1 is complete (roadmap steps 1 to 5 in the design doc) and runs in production:
 
 - MCP endpoint (`/mcp`) with every tool, both prompts and the server instructions
+- Events as MCP resources (`scheduler://events/{shortCode}` and its milestone `/status`), with push updates over
+  `subscriptions/listen` for clients on protocol 2026-07-28
 - MCP input requests (MRTR): `create_event` and `cancel_event` ask the user, through a client that supports them,
   for a missing cancel reason, invite list, candidate times, time zone or title, and offer once to add a
   description to a very short title
@@ -45,9 +47,9 @@ Version 1 is complete (roadmap steps 1 to 5 in the design doc) and runs in produ
   reminder, deadline, retention and time-zone jobs
 - Rate limits, per-organizer limits, and the Kubernetes deployment (`k8s/`, [docs/deployment.md](docs/deployment.md))
 
-Next (v1.1 in the design doc): pushing event changes to agents with MCP resource subscriptions
-([#36](https://github.com/MarimerLLC/scheduler/issues/36)), RockBot integration, and an `.ics` invite for
-organizers without a calendar MCP server.
+Next (v1.1 in the design doc): RockBot integration (watching events needs
+[MarimerLLC/rockbot#768](https://github.com/MarimerLLC/rockbot/issues/768)), and an `.ics` invite for organizers
+without a calendar MCP server.
 
 ## Layout
 

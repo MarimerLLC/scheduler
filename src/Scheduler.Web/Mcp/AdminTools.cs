@@ -95,17 +95,5 @@ public sealed class AdminTools(IAdminService admin, IHttpContextAccessor http)
             return result;
         };
 
-    private async Task<string> Run<T>(Func<CallerIdentity, Task<T>> action)
-    {
-        var caller = CallerResolver.FromHttpContext(http.HttpContext, Channel.Mcp)
-            ?? throw new McpException("You are not signed in to the scheduling server.");
-        try
-        {
-            return ToolJson.Serialize(await action(caller));
-        }
-        catch (SchedulingException ex)
-        {
-            throw new McpException(ex.Message);
-        }
-    }
+    private Task<string> Run<T>(Func<CallerIdentity, Task<T>> action) => McpCaller.RunAsync(http.HttpContext, action);
 }
