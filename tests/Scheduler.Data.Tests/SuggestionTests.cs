@@ -70,9 +70,9 @@ public sealed class SuggestionTests
         Assert.HasCount(1, (await _h.GetAsync(Harness.Bob, ev)).Suggestions!);
         Assert.IsNull((await _h.GetAsync(Harness.Carol, ev)).Suggestions, "other participants don't see who suggested what");
 
-        var summary = (await _h.Service.ListMyEventsAsync(Harness.Rocky, EventListFilter.Organizing, None)).Single();
+        var summary = (await _h.Service.ListMyEventsAsync(Harness.Rocky, EventListFilter.Organizing, includePast: false, None)).Single();
         Assert.AreEqual(1, summary.PendingSuggestions);
-        Assert.IsNull((await _h.Service.ListMyEventsAsync(Harness.Bob, EventListFilter.All, None)).Single().PendingSuggestions);
+        Assert.IsNull((await _h.Service.ListMyEventsAsync(Harness.Bob, EventListFilter.All, includePast: false, None)).Single().PendingSuggestions);
     }
 
     [TestMethod]

@@ -40,7 +40,7 @@ public sealed class ConcurrencyTests
             h.Service.CreateEventAsync(newcomer, Harness.Request(title: $"Planning {i}"), CancellationToken.None))));
 
         // ...and every one of them is theirs to see and manage, on the one account that owns the address.
-        var organizing = await h.Service.ListMyEventsAsync(newcomer, EventListFilter.Organizing, CancellationToken.None);
+        var organizing = await h.Service.ListMyEventsAsync(newcomer, EventListFilter.Organizing, includePast: false, CancellationToken.None);
         CollectionAssert.AreEquivalent(created.Select(e => e.Id).ToList(), organizing.Select(e => e.Id).ToList());
         foreach (var ev in created)
             Assert.IsTrue((await h.GetAsync(newcomer, ev)).IsOrganizer);

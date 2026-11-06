@@ -1,3 +1,4 @@
+using NodaTime;
 using Scheduler.Core;
 using Scheduler.Core.Model;
 using Scheduler.Core.Services;
@@ -94,7 +95,7 @@ public sealed class VisibilityTests
         Assert.AreEqual(first.Id, (await _h.GetAsync(bobByLink, first)).Id);
         await Assert.ThrowsExactlyAsync<SchedulingAccessException>(() => _h.GetAsync(bobByLink, second));
 
-        var listed = await _h.Service.ListMyEventsAsync(bobByLink, EventListFilter.All, CancellationToken.None);
+        var listed = await _h.Service.ListMyEventsAsync(bobByLink, EventListFilter.All, includePast: false, CancellationToken.None);
         Assert.AreEqual(first.Id, listed.Single().Id);
     }
 
@@ -114,13 +115,46 @@ public sealed class VisibilityTests
     {
         var ev = await _h.CreateAsync();
 
-        var organizing = await _h.Service.ListMyEventsAsync(Harness.Rocky, EventListFilter.Organizing, CancellationToken.None);
-        var rockyNeeds = await _h.Service.ListMyEventsAsync(Harness.Rocky, EventListFilter.NeedsMyVote, CancellationToken.None);
-        var bobOrganizing = await _h.Service.ListMyEventsAsync(Harness.Bob, EventListFilter.Organizing, CancellationToken.None);
+        var organizing = await _h.Service.ListMyEventsAsync(Harness.Rocky, EventListFilter.Organizing, includePast: false, CancellationToken.None);
+        var rockyNeeds = await _h.Service.ListMyEventsAsync(Harness.Rocky, EventListFilter.NeedsMyVote, includePast: false, CancellationToken.None);
+        var bobOrganizing = await _h.Service.ListMyEventsAsync(Harness.Bob, EventListFilter.Organizing, includePast: false, CancellationToken.None);
 
         Assert.IsTrue(organizing.Single().IsOrganizer);
         Assert.IsEmpty(rockyNeeds);
         Assert.IsEmpty(bobOrganizing);
         Assert.AreEqual(ev.Id, organizing.Single().Id);
+    }
+
+    [TestMethod]
+    public async Task PastEventsAreListedOnlyWhenAskedFor()
+    {
+        var open = await _h.CreateAsync(Harness.Request(respondBy: null, title: "Open"));
+        var cancelled = await _h.CreateAsync(Harness.Request(title: "Cancelled"));
+        var expired = await _h.CreateAsync(Harness.Request(title: "Expired"));
+        // Slot 0 is Tue Nov 3, 10:00-10:30 Chicago (16:00-16:30 UTC).
+        var finalized = await _h.CreateAsync(Harness.Request(title: "Finalized"));
+        await _h.Service.CancelAsync(Harness.Rocky, cancelled.ShortCode, "No longer needed", CancellationToken.None);
+        await _h.Service.FinalizeAsync(Harness.Rocky, finalized.ShortCode, finalized.Slots[0].SlotId, finalized.Version, CancellationToken.None);
+        _h.Clock.Reset(Instant.FromUtc(2026, 10, 31, 12, 0));
+        Assert.AreEqual(1, await _h.Jobs.ExpireOverdueEventsAsync(CancellationToken.None));
+
+        async Task<string[]> TitlesAsync(CallerIdentity caller, EventListFilter filter, bool includePast) =>
+            (await _h.Service.ListMyEventsAsync(caller, filter, includePast, CancellationToken.None))
+                .Select(e => e.Title).Order().ToArray();
+
+        CollectionAssert.AreEqual(new[] { "Finalized", "Open" }, await TitlesAsync(Harness.Rocky, EventListFilter.Organizing, false));
+        CollectionAssert.AreEqual(new[] { "Finalized", "Open" }, await TitlesAsync(Harness.Bob, EventListFilter.All, false));
+        CollectionAssert.AreEqual(
+            new[] { "Cancelled", "Expired", "Finalized", "Open" }, await TitlesAsync(Harness.Rocky, EventListFilter.Organizing, true));
+        CollectionAssert.AreEqual(
+            new[] { "Cancelled", "Expired", "Finalized", "Open" }, await TitlesAsync(Harness.Bob, EventListFilter.All, true));
+
+        _h.Clock.Reset(Instant.FromUtc(2026, 11, 3, 16, 29));
+        CollectionAssert.AreEqual(new[] { "Finalized", "Open" }, await TitlesAsync(Harness.Bob, EventListFilter.All, false), "during the meeting");
+
+        _h.Clock.Reset(Instant.FromUtc(2026, 11, 3, 16, 30));
+        CollectionAssert.AreEqual(new[] { "Open" }, await TitlesAsync(Harness.Bob, EventListFilter.All, false), "once it has ended");
+        CollectionAssert.AreEqual(new[] { "Open" }, await TitlesAsync(Harness.Bob, EventListFilter.NeedsMyVote, false));
+        CollectionAssert.AreEqual(new[] { "Open" }, await TitlesAsync(Harness.Bob, EventListFilter.NeedsMyVote, true), "past events never need a vote");
     }
 }

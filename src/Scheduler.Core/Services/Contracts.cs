@@ -40,9 +40,9 @@ public enum EventListFilter
 {
     /// <summary>Open events where the caller is a participant who hasn't voted on every slot.</summary>
     NeedsMyVote,
-    /// <summary>Events the caller organized, any state.</summary>
+    /// <summary>Events the caller organized (past ones only when asked for).</summary>
     Organizing,
-    /// <summary>Everything visible to the caller.</summary>
+    /// <summary>Everything visible to the caller (past events only when asked for).</summary>
     All
 }
 
