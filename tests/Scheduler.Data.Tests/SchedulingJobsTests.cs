@@ -181,8 +181,8 @@ public sealed class SchedulingJobsTests
         var ev = await _h.CreateAsync();
         await _h.VoteAsync(Harness.Bob, ev, (0, VoteValue.Preferred), (1, VoteValue.No), (2, VoteValue.Preferred));
 
-        var mine = (await _h.Service.ListMyEventsAsync(Harness.Rocky, EventListFilter.Organizing, None)).Single();
-        var bobs = (await _h.Service.ListMyEventsAsync(Harness.Bob, EventListFilter.All, None)).Single();
+        var mine = (await _h.Service.ListMyEventsAsync(Harness.Rocky, EventListFilter.Organizing, includePast: false, None)).Single();
+        var bobs = (await _h.Service.ListMyEventsAsync(Harness.Bob, EventListFilter.All, includePast: false, None)).Single();
 
         Assert.AreEqual((1, 3), (mine.Responded, mine.Invited));
         Assert.IsNull(bobs.Responded);

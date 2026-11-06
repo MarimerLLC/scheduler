@@ -48,9 +48,9 @@ public sealed class VotingTests
         var ev = await _h.CreateAsync();
 
         await _h.VoteAsync(Harness.Bob, ev, (0, VoteValue.Preferred));
-        var partway = await _h.Service.ListMyEventsAsync(Harness.Bob, EventListFilter.NeedsMyVote, CancellationToken.None);
+        var partway = await _h.Service.ListMyEventsAsync(Harness.Bob, EventListFilter.NeedsMyVote, includePast: false, CancellationToken.None);
         var view = await _h.VoteAsync(Harness.Bob, ev, (1, VoteValue.IfNecessary), (2, VoteValue.No));
-        var done = await _h.Service.ListMyEventsAsync(Harness.Bob, EventListFilter.NeedsMyVote, CancellationToken.None);
+        var done = await _h.Service.ListMyEventsAsync(Harness.Bob, EventListFilter.NeedsMyVote, includePast: false, CancellationToken.None);
 
         Assert.IsTrue(partway.Single().NeedsMyVote);
         Assert.IsEmpty(done);

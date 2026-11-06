@@ -17,7 +17,12 @@ public interface ISchedulingService
     /// </summary>
     Task<CallerIdentity?> ResolveVotingLinkAsync(string eventRef, string token, CancellationToken cancellationToken);
 
-    Task<IReadOnlyList<EventSummary>> ListMyEventsAsync(CallerIdentity caller, EventListFilter filter, CancellationToken cancellationToken);
+    /// <summary>The caller's events, newest first, with those waiting for the caller's vote at the top.</summary>
+    /// <param name="includePast">
+    /// Also list past events: cancelled, expired (the deadline passed without a decision), and finalized for a time
+    /// whose meeting has ended. False by default everywhere, so lists show only what is still going on.
+    /// </param>
+    Task<IReadOnlyList<EventSummary>> ListMyEventsAsync(CallerIdentity caller, EventListFilter filter, bool includePast, CancellationToken cancellationToken);
 
     /// <param name="viewerTimeZone">IANA zone to add a viewer-local time to each slot, if given.</param>
     Task<EventView> GetEventAsync(CallerIdentity caller, string eventRef, string? viewerTimeZone, CancellationToken cancellationToken);

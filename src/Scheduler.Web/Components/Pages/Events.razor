@@ -33,6 +33,11 @@ else if (_caller is null)
 }
 else
 {
+    <label class="show-past">
+        <input type="checkbox" checked="@_includePast" @onchange="TogglePastAsync" />
+        Show past events (cancelled, closed, or already held)
+    </label>
+
     <h2>Waiting for your answer</h2>
     @if (_needsVote.Count == 0)
     {
@@ -58,7 +63,7 @@ else
     @if (_organizing.Count == 0)
     {
         <p class="hint">
-            You don't organize any events@(_access is { CanOrganize: true } ? "." : ", and this server's admins haven't added you as an organizer.")
+            You don't organize any @(_includePast ? "" : "current ")events@(_access is { CanOrganize: true } ? "." : ", and this server's admins haven't added you as an organizer.")
             @if (_access is { CanOrganize: false })
             {
                 <a href="/ask-to-organize">@(_access.OrganizerRequest is null ? "Ask to organize" : "Your request to organize")</a>
@@ -116,6 +121,7 @@ else
     private IReadOnlyList<EventSummary> _invited = [];
     private HashSet<Guid> _shown = [];
     private bool _loading = true;
+    private bool _includePast;
     private IDisposable? _subscription;
 
     protected override async Task OnInitializedAsync()
@@ -152,11 +158,17 @@ else
 
     private async Task LoadAsync()
     {
-        var events = await Scheduling.ListMyEventsAsync(_caller!, EventListFilter.All, CancellationToken.None);
+        var events = await Scheduling.ListMyEventsAsync(_caller!, EventListFilter.All, _includePast, CancellationToken.None);
         _needsVote = events.Where(e => e.NeedsMyVote).ToList();
         _organizing = events.Where(e => e.IsOrganizer).ToList();
         _invited = events.Where(e => !e.IsOrganizer && !e.NeedsMyVote).ToList();
         _shown = events.Select(e => e.Id).ToHashSet();
+    }
+
+    private async Task TogglePastAsync(ChangeEventArgs e)
+    {
+        _includePast = e.Value is true;
+        await LoadAsync();
     }
 
     public static string StateLabel(EventState state) => state switch

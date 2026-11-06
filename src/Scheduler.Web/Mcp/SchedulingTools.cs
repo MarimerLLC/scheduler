@@ -71,11 +71,12 @@ public sealed class SchedulingTools(ISchedulingService scheduling, IAdminService
         });
 
     [McpServerTool(Name = "list_my_events", Title = "List my scheduling events", ReadOnly = true, Idempotent = true, OpenWorld = false)]
-    [Description("Lists scheduling events visible to the user. By default returns only events waiting for the user's vote.")]
+    [Description("Lists scheduling events visible to the user. By default returns only events waiting for the user's vote. Past events (cancelled, expired, or finalized for a meeting that has ended) are left out unless includePast is true; use that only when the user asks about old events.")]
     public Task<string> ListMyEvents(
         [Description("needs_my_vote (default), organizing, or all.")] string filter = "needs_my_vote",
+        [Description("True to also list past events: cancelled, expired, or finalized for a meeting that has ended. Default false.")] bool includePast = false,
         CancellationToken cancellationToken = default) =>
-        Run(caller => scheduling.ListMyEventsAsync(caller, ParseFilter(filter), cancellationToken));
+        Run(caller => scheduling.ListMyEventsAsync(caller, ParseFilter(filter), includePast, cancellationToken));
 
     [McpServerTool(Name = "get_event", Title = "Get scheduling event", ReadOnly = true, Idempotent = true, OpenWorld = false)]
     [Description("Gets one event: its slots with per-slot vote totals and the user's own votes. The organizer also sees each participant's votes and a ranked recommendation (rank 1 is best). Only no rules a slot out. Recommend a slot with an if_necessary vote only when it is the only way to make any time work, and then tell the organizer who would be stretched by it. suggestions are times participants suggested adding (status pending, added or dismissed): the organizer sees everyone's, a participant only their own.")]

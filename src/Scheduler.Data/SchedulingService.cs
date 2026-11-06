@@ -108,9 +108,10 @@ public sealed class SchedulingService(
         return caller;
     }
 
-    public async Task<IReadOnlyList<EventSummary>> ListMyEventsAsync(CallerIdentity caller, EventListFilter filter, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<EventSummary>> ListMyEventsAsync(CallerIdentity caller, EventListFilter filter, bool includePast, CancellationToken cancellationToken)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+        var now = clock.GetCurrentInstant();
         var account = await FindAccountAsync(db, caller, cancellationToken);
         var emails = OwnEmails(caller, account).ToList();
         var accountId = caller.MagicLinkEventId is null ? account?.Id : null;
@@ -125,6 +126,13 @@ public sealed class SchedulingService(
             EventListFilter.Organizing => query.Where(e => e.OrganizerId == accountId),
             _ => query.Where(e => e.OrganizerId == accountId || e.Participants.Any(p => emails.Contains(p.Email))),
         };
+
+        // Filtered in the query, before the list limit, so past events can't crowd current ones out of it. A finalized
+        // event stays current until its meeting ends.
+        if (!includePast)
+            query = query.Where(e => e.State == EventState.Draft
+                || e.State == EventState.Open
+                || (e.State == EventState.Finalized && e.Slots.Any(s => s.Id == e.FinalizedSlotId && s.Start + e.Duration > now)));
 
         var events = await query
             .OrderByDescending(e => e.CreatedAt)
