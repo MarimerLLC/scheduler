@@ -51,9 +51,11 @@ Version 1 is complete (roadmap steps 1 to 5 in the design doc) and runs in produ
   reminder, deadline, retention and time-zone jobs
 - Rate limits, per-organizer limits, and the Kubernetes deployment (`k8s/`, [docs/deployment.md](docs/deployment.md))
 
-Next (v1.1 in the design doc): RockBot integration (watching events needs
-[MarimerLLC/rockbot#768](https://github.com/MarimerLLC/rockbot/issues/768)), and an `.ics` invite for organizers
-without a calendar MCP server.
+RockBot is connected with a personal access token, and its MCP bridge can watch event status resources
+([MarimerLLC/rockbot#768](https://github.com/MarimerLLC/rockbot/issues/768)).
+
+Next (v1.1 in the design doc): an `.ics` invite for organizers without a calendar MCP server
+([#50](https://github.com/MarimerLLC/scheduler/issues/50)).
 
 ## Layout
 
