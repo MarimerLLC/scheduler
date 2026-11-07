@@ -1,0 +1,124 @@
+@page "/agents"
+@using Scheduler.Web.Identity
+@inject NavigationManager Navigation
+
+@* Static: a page to read, linked from the home page, the header and the voting page. The MCP URL comes from the
+   request, like McpResource, so it is right on every host. See docs/design.md, "Web UI". *@
+
+<PageTitle>Use Scheduler with your agent</PageTitle>
+
+<article class="agent-guide">
+<h1>Use Scheduler with your agent</h1>
+
+<p>
+    You can do everything here from the web pages and the links in Scheduler's emails. Connect your AI agent
+    (Claude, GitHub Copilot, RockBot, or any other assistant that speaks MCP) and it can do most of the work for you:
+</p>
+
+<ul>
+    <li>
+        <strong>When you're invited:</strong> find the requests waiting for your answer, check every proposed time
+        against your calendar, suggest answers for you to confirm, vote, and suggest other times when none work.
+    </li>
+    <li>
+        <strong>When you organize:</strong> find times you're free, start the poll and email the invitations, watch the
+        answers come in, recommend the best time, then put the meeting in your calendar.
+    </li>
+</ul>
+
+<h2 id="calendar">Your agent needs your calendar</h2>
+
+<p>
+    Scheduler never sees anyone's calendar. That's on purpose: nobody shares their calendar with the server or with
+    each other, and the server only learns the answers. It also means the checking happens in <em>your</em> agent.
+    An agent that can't read your calendar can only guess, or ask you about every time.
+</p>
+
+<p>
+    So connect your agent to every calendar that decides when you're free: a work calendar and a personal one, if you
+    have both. A clash in any of them counts. Organizers also want their agent to be able to create events, so the
+    chosen time lands in the calendar.
+</p>
+
+<p>
+    Many agents already have this: Claude has Google Calendar and Microsoft 365 connectors, for example. If yours
+    doesn't, or your calendars are spread across several accounts,
+    <a href="https://github.com/MarimerLLC/calendar-mcp">Adjutant</a> can provide it. Adjutant is an open-source MCP
+    server you run yourself. It gives an agent email, calendar and contacts across Microsoft 365, Outlook.com, Google
+    Workspace and IMAP accounts at once, and lets it find Scheduler's invitation emails too.
+</p>
+
+<h2 id="connect">Connect your agent</h2>
+
+<p>Add this server to your agent as an MCP server (some agents call it a connector):</p>
+
+<pre><code>@McpUrl</code></pre>
+
+<p>Your agent has to sign in as you, in one of two ways.</p>
+
+<h3 id="oauth">Sign in through your browser (OAuth)</h3>
+
+<p>
+    For agents that can open a browser, which is most of them. The first time the agent connects, it opens a page here
+    where you sign in with Microsoft or Google (or an emailed link) and allow the agent to act for you. After that it
+    stays signed in. No token to copy, nothing to store.
+</p>
+
+<ul>
+    <li>
+        <strong>Claude</strong> (claude.ai, the desktop and mobile apps): in Settings, Connectors, add a custom connector
+        with the URL above, then connect it.
+    </li>
+    <li>
+        <strong>Claude Code:</strong> <code>claude mcp add --transport http scheduler @McpUrl</code>, then sign in from
+        <code>/mcp</code>.
+    </li>
+    <li>
+        <strong>VS Code with GitHub Copilot:</strong> add it to <code>mcp.json</code>:
+        <pre><code>@VsCodeEntry</code></pre>
+    </li>
+    <li>Any other MCP client that supports OAuth sign-in works the same way.</li>
+</ul>
+
+<h3 id="token">Use a personal access token</h3>
+
+<p>
+    For agents that can't open a browser: one that runs unattended on a server, like RockBot, or a script. Create a
+    token on your <a href="/account">account page</a> and give it to your agent, which sends it with every request as
+    <code>Authorization: Bearer</code> followed by the token. A token acts as you until it expires or you revoke it, so
+    treat it like a password and give each agent its own.
+</p>
+
+<h2 id="use">Then just ask</h2>
+
+<p>Once your agent is connected, ask in your own words. For example:</p>
+
+<ul>
+    <li>"Do I have any scheduling requests waiting? Check them against my calendar and suggest answers."</li>
+    <li>"Find a time next week for a 30-minute meeting with alice@example.com and bob@example.com."</li>
+    <li>"How are the votes going on my planning meeting? Which time looks best?"</li>
+</ul>
+
+<p>
+    Scheduler also offers two ready-made prompts, <code>handle_scheduling_requests</code> and
+    <code>schedule_meeting</code>, if your agent lets you pick prompts from its servers.
+</p>
+
+<p class="hint">
+    Anyone can answer an invitation. To start polls of your own, <a href="/ask-to-organize">ask to organize</a> (or ask
+    your agent to). Invited at another address? Add it on your <a href="/account">account page</a> so you, and your agent,
+    can answer for it.
+</p>
+</article>
+
+@code {
+    private string McpUrl => Navigation.ToAbsoluteUri(McpResource.Path).AbsoluteUri;
+
+    private string VsCodeEntry => $$"""
+        {
+          "servers": {
+            "scheduler": { "type": "http", "url": "{{McpUrl}}" }
+          }
+        }
+        """;
+}

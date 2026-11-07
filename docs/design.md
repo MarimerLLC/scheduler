@@ -724,7 +724,8 @@ Blazor with per-page render modes.
 
 | Page | Render mode | Purpose |
 |---|---|---|
-| `/` | Static | What this is; how to connect an agent (the `/mcp` URL). |
+| `/` | Static | What this is, with a link to `/agents`. |
+| `/agents` | Static | Using Scheduler from an agent: what it can do, that it needs the person's own calendars (with [Adjutant](https://github.com/MarimerLLC/calendar-mcp) for agents without them), the `/mcp` URL, and signing in by OAuth or a personal access token. Linked from the home page, the header, the voting page and `/account`. |
 | `/e/{shortCode}?t=...` | **Static SSR with plain form posts** | Voting (a time left blank is saved as no), and suggesting other times (a second form, with the viewer's own zone filled in by `app.js`, the organizer's without it). Opened from email, often on a phone: no long-lived connection, survives flaky networks, works without JavaScript (`app.js` only adds each time in the viewer's own zone). See [Magic links](#magic-links-voters-without-an-account). |
 | `/events` | InteractiveServer | Dashboard: what is waiting for my answer, the events I organize with how many have answered and how many suggested times wait (live), events I'm invited to. Past events (cancelled, expired, or held) are hidden unless "Show past events" is ticked. |
 | `/events/new` | InteractiveServer | Compose an event by hand: times in one zone (the browser's by default), invitees, optional deadline. Sending opens it, like `create_event`. |
