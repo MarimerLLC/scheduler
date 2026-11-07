@@ -88,6 +88,10 @@
         <p style="margin:16px 0 0;font-size:14px;color:#59636e;">
             Use an AI assistant with the scheduling server connected? Ask it to "check my scheduling requests".
             Server: <code>@McpUrl</code>, event <code>@Event.ShortCode</code>.
+            @if (AgentsUrl is not null)
+            {
+                <a href="@AgentsUrl" style="color:#0969da;">How to connect your assistant</a>
+            }
         </p>
     }
 </EmailFrame>
@@ -109,6 +113,8 @@
     [Parameter] public string? ActionNote { get; set; }
     [Parameter] public string? Closing { get; set; }
     [Parameter] public string? McpUrl { get; set; }
+    // The "Use Scheduler with your agent" page, linked after the MCP line.
+    [Parameter] public string? AgentsUrl { get; set; }
     [Parameter] public string? UnsubscribeUrl { get; set; }
     [Parameter] public string? UnsubscribeLine { get; set; }
 }

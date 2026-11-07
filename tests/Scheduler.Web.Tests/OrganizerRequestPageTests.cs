@@ -88,6 +88,7 @@ public sealed class OrganizerRequestPageTests
         StringAssert.Contains(waiting.HtmlBody, "https://sched.test/admin/organizers");
         StringAssert.Contains(waiting.HtmlBody, "Review requests");
         StringAssert.Contains(approved.HtmlBody, "Schedule a meeting");
+        StringAssert.Contains(approved.HtmlBody, "/agents\" style=\"color:#0969da;\">How to connect it</a>");
         StringAssert.Contains(declined.HtmlBody, "Sun Nov 15");
         Assert.DoesNotContain("<a href", declined.HtmlBody);
     }

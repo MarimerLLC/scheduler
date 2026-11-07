@@ -28,6 +28,7 @@ internal sealed class HtmlEmailComposer(
             [nameof(EventEmail.ActionLabel)] = "Choose the times that work",
             [nameof(EventEmail.ActionNote)] = PersonalLink,
             [nameof(EventEmail.McpUrl)] = text.McpUrl,
+            [nameof(EventEmail.AgentsUrl)] = text.AgentsUrl,
         });
 
     public Task<ComposedEmail> NewSlotsAsync(SchedulingEvent ev, Participant recipient, string votingUrl, IReadOnlyList<ProposedSlot> newSlots, bool rescheduling) =>
@@ -40,6 +41,7 @@ internal sealed class HtmlEmailComposer(
             [nameof(EventEmail.ActionLabel)] = "Answer the new times",
             [nameof(EventEmail.ActionNote)] = PersonalLink,
             [nameof(EventEmail.McpUrl)] = text.McpUrl,
+            [nameof(EventEmail.AgentsUrl)] = text.AgentsUrl,
         });
 
     public Task<ComposedEmail> VoteReceiptAsync(SchedulingEvent ev, Participant recipient, string votingUrl) =>
@@ -109,6 +111,7 @@ internal sealed class HtmlEmailComposer(
             [nameof(EventEmail.ActionLabel)] = "Choose the times that work",
             [nameof(EventEmail.ActionNote)] = PersonalLink,
             [nameof(EventEmail.McpUrl)] = text.McpUrl,
+            [nameof(EventEmail.AgentsUrl)] = text.AgentsUrl,
         });
 
     public Task<ComposedEmail> DeadlinePassedAsync(SchedulingEvent ev, string dashboardUrl) =>
@@ -192,7 +195,9 @@ internal sealed class HtmlEmailComposer(
                 [nameof(LinkEmail.Paragraphs)] = new[] { PlainTextEmailComposer.OrganizerRequestApprovedIntro(email) },
                 [nameof(LinkEmail.ActionUrl)] = newEventUrl,
                 [nameof(LinkEmail.ActionLabel)] = "Schedule a meeting",
-                [nameof(LinkEmail.Closing)] = $"Or ask your assistant, with this server's MCP endpoint as a connector: {text.McpUrl}",
+                [nameof(LinkEmail.Closing)] = $"Or ask your assistant, with this server's MCP endpoint as a connector: {text.McpUrl}.",
+                [nameof(LinkEmail.ClosingLinkUrl)] = text.AgentsUrl,
+                [nameof(LinkEmail.ClosingLinkLabel)] = "How to connect it",
             }),
         };
     }

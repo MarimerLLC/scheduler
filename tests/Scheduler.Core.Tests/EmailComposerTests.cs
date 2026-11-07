@@ -7,7 +7,7 @@ namespace Scheduler.Core.Tests;
 [TestClass]
 public sealed class EmailComposerTests
 {
-    private static readonly PlainTextEmailComposer Composer = new("https://sched.test/mcp");
+    private static readonly PlainTextEmailComposer Composer = new("https://sched.test");
 
     [TestMethod]
     public void InvitationCarriesCodeLinkAndTimesWithOffsets()
@@ -23,6 +23,16 @@ public sealed class EmailComposerTests
         StringAssert.Contains(email.TextBody, "https://sched.test/e/CODE?t=TOKEN");
         StringAssert.Contains(email.TextBody, "Tue Nov 3, 10:00 AM CST (UTC-06:00)");
         StringAssert.Contains(email.TextBody, "https://sched.test/mcp");
+        StringAssert.Contains(email.TextBody, "How to connect your assistant: https://sched.test/agents");
+    }
+
+    [TestMethod]
+    public void ApprovingARequestToOrganizeLinksTheAgentsPage()
+    {
+        var email = Composer.OrganizerRequestApproved("bob@example.com", "https://sched.test/events/new");
+
+        StringAssert.Contains(email.TextBody, "connector: https://sched.test/mcp");
+        StringAssert.Contains(email.TextBody, "How to connect it: https://sched.test/agents");
     }
 
     [TestMethod]
@@ -161,7 +171,7 @@ public sealed class EmailComposerTests
     [TestMethod]
     public void EventEmailsCarryTheRecipientsUnsubscribeLinks()
     {
-        var composer = new PlainTextEmailComposer("https://sched.test/mcp", new FakeUnsubscribeLinks());
+        var composer = new PlainTextEmailComposer("https://sched.test", new FakeUnsubscribeLinks());
         var ev = TestEvents.WithSlots(1);
         var bob = ev.AddParticipant("bob@example.com");
 
@@ -213,7 +223,7 @@ public sealed class EmailComposerTests
     [TestMethod]
     public void AccountLinkEmailsHaveNoUnsubscribe()
     {
-        var composer = new PlainTextEmailComposer("https://sched.test/mcp", new FakeUnsubscribeLinks());
+        var composer = new PlainTextEmailComposer("https://sched.test", new FakeUnsubscribeLinks());
 
         Assert.IsNull(composer.SignInLink("pat@example.com", "https://sched.test/verify?t=x").ListUnsubscribeUrl);
         Assert.IsNull(composer.AddressVerification("pat@example.com", "https://sched.test/verify?t=x", "me@example.com").ListUnsubscribeUrl);

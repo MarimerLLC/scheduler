@@ -8,6 +8,10 @@ votes **preferred**, **yes**, **if necessary** or **no** on each time, from whic
 email. The server never reads a calendar: each person's own agent checks their own calendar, and the
 server only ever learns the votes.
 
+People using a deployed server can read its `/agents` page ("Use Scheduler with your agent", linked from the home
+page): what an agent can do, why it needs access to their calendars, and how to connect it with OAuth or a personal
+access token.
+
 See [docs/design.md](docs/design.md) for the full design, and
 [docs/identity-setup.md](docs/identity-setup.md) for setting up sign-in on a deployed server.
 
