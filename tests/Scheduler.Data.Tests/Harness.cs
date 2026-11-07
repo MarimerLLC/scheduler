@@ -37,13 +37,13 @@ internal sealed class Harness
         };
         configure?.Invoke(settings);
         var options = Options.Create(settings);
-        var composer = new PlainTextEmailComposer(BaseUrl + "/mcp");
+        var composer = new PlainTextEmailComposer(BaseUrl);
         Service = new SchedulingService(db, clock, options, links, composer, Changes);
         Jobs = new SchedulingJobs(db, clock, options, links, composer, Changes);
         Subscriptions = new SubscriptionService(db, clock, options, composer);
         AdminService = new AdminService(db, clock, options, composer);
         AccessTokens = new AccessTokenService(db, clock);
-        Accounts = new AccountService(db, clock, options, new PlainTextEmailComposer(BaseUrl + "/mcp"));
+        Accounts = new AccountService(db, clock, options, new PlainTextEmailComposer(BaseUrl));
     }
 
     public IDbContextFactory<SchedulerDbContext> Db { get; }

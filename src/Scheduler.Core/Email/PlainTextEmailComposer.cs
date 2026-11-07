@@ -8,11 +8,18 @@ namespace Scheduler.Core.Email;
 /// <summary>
 /// The subjects and plain-text bodies of the notifications. Plain text is the primary body because agents read
 /// it; the web app's <c>HtmlEmailComposer</c> adds an HTML alternative with the same content. Without
-/// <paramref name="unsubscribe"/> (tests) emails carry no unsubscribe link.
+/// <paramref name="unsubscribe"/> (tests) emails carry no unsubscribe link. <paramref name="publicBaseUrl"/> is the
+/// server's public origin, which the MCP endpoint and the "Use Scheduler with your agent" page hang off.
 /// </summary>
-public sealed class PlainTextEmailComposer(string mcpUrl, IUnsubscribeLinks? unsubscribe = null) : IEmailComposer
+public sealed class PlainTextEmailComposer(string publicBaseUrl, IUnsubscribeLinks? unsubscribe = null) : IEmailComposer
 {
+    private readonly string mcpUrl = publicBaseUrl.TrimEnd('/') + "/mcp";
+    private readonly string agentsUrl = publicBaseUrl.TrimEnd('/') + "/agents";
+
     public string McpUrl => mcpUrl;
+
+    /// <summary>The page on connecting an agent: why it needs the person's calendar, OAuth or a token.</summary>
+    public string AgentsUrl => agentsUrl;
 
     public ComposedEmail Invitation(SchedulingEvent ev, Participant recipient, string votingUrl)
     {
@@ -185,6 +192,7 @@ public sealed class PlainTextEmailComposer(string mcpUrl, IUnsubscribeLinks? uns
         body.AppendLine($"  {newEventUrl}");
         body.AppendLine();
         body.AppendLine($"Or ask your assistant, with this server's MCP endpoint as a connector: {mcpUrl}");
+        body.AppendLine($"How to connect it: {agentsUrl}");
         return new ComposedEmail(OrganizerRequestApprovedSubject, body.ToString());
     }
 
@@ -415,5 +423,6 @@ public sealed class PlainTextEmailComposer(string mcpUrl, IUnsubscribeLinks? uns
         body.AppendLine();
         body.AppendLine("Or, if you use an AI assistant with the scheduling server connected, ask it to");
         body.AppendLine($"\"check my scheduling requests\". Server: {mcpUrl}  Event: {ev.ShortCode}");
+        body.AppendLine($"How to connect your assistant: {agentsUrl}");
     }
 }

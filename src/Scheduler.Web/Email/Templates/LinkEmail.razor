@@ -1,5 +1,5 @@
 @* An email about the recipient's own account: confirming an address, signing in, a request to organize.
-   The button and the closing line are optional. *@
+   The button, the closing line and a link after it are optional. *@
 
 <EmailFrame Title="@Subject">
     @foreach (var paragraph in Paragraphs)
@@ -14,7 +14,13 @@
     }
     @if (!string.IsNullOrEmpty(Closing))
     {
-        <p style="margin:0;font-size:14px;color:#59636e;">@Closing</p>
+        <p style="margin:0;font-size:14px;color:#59636e;">
+            @Closing
+            @if (!string.IsNullOrEmpty(ClosingLinkUrl))
+            {
+                <a href="@ClosingLinkUrl" style="color:#0969da;">@ClosingLinkLabel</a>
+            }
+        </p>
     }
 </EmailFrame>
 
@@ -24,4 +30,6 @@
     [Parameter] public string? ActionUrl { get; set; }
     [Parameter] public string? ActionLabel { get; set; }
     [Parameter] public string? Closing { get; set; }
+    [Parameter] public string? ClosingLinkUrl { get; set; }
+    [Parameter] public string? ClosingLinkLabel { get; set; }
 }

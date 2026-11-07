@@ -175,6 +175,7 @@ public sealed class OrganizerPageTests
         StringAssert.Contains(reminder.HtmlBody, "Times you haven&#x27;t answered");
         StringAssert.Contains(reminder.HtmlBody, "Tue Nov 3, 10:00 AM CST");
         Assert.IsNotNull(reminder.ListUnsubscribeUrl);
+        StringAssert.Contains(reminder.HtmlBody, "/agents\" style=\"color:#0969da;\">How to connect your assistant</a>");
         StringAssert.Contains(closed.HtmlBody, "voting has closed");
         StringAssert.Contains(closed.Subject, "Voting closed: Planning");
     }

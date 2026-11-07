@@ -31,7 +31,7 @@ internal static class SchedulerSetup
         builder.Services.AddSingleton<UnsubscribeLinks>();
         builder.Services.AddSingleton<IUnsubscribeLinks>(sp => sp.GetRequiredService<UnsubscribeLinks>());
         builder.Services.AddSingleton(sp => new PlainTextEmailComposer(
-            sp.GetRequiredService<IOptions<SchedulingOptions>>().Value.PublicBaseUrl.TrimEnd('/') + "/mcp",
+            sp.GetRequiredService<IOptions<SchedulingOptions>>().Value.PublicBaseUrl,
             sp.GetRequiredService<IUnsubscribeLinks>()));
         builder.Services.AddSingleton<IEmailComposer, HtmlEmailComposer>();
     }

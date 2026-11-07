@@ -798,7 +798,9 @@ Every message about an event:
   rendered from Razor components in `Scheduler.Web/Email/Templates` with `HtmlRenderer` so the markup lives
   next to the UI (`HtmlEmailComposer`). Inline styles only, one column; Razor encodes the organizer's text.
 - Lists slots in the organizer's zone with offsets, and includes the magic link and a line for agent users:
-  "Ask your assistant to *check my scheduling requests* (server: https://.../mcp)".
+  "Ask your assistant to *check my scheduling requests* (server: https://.../mcp)", followed by a link to `/agents`
+  ("How to connect your assistant") for people whose agent isn't connected yet. The approval of a request to organize
+  links it too.
 - `Reply-To` is the organizer's address, so replies reach a person.
 - `List-Unsubscribe` with an HTTPS one-click URL (RFC 8058) and `List-Unsubscribe-Post`, and a footer line
   linking the unsubscribe page. The unsubscribe token is a Data Protection–protected payload of the address
