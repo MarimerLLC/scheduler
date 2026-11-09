@@ -2,6 +2,8 @@
 
 Find a meeting time across people and organizations without anyone sharing their calendar.
 
+<img width="200" height="200" alt="Scheduler logo: a calendar page with a glowing cyan check" src="docs/assets/images/scheduler.png" />
+
 The organizer (or their AI agent) proposes candidate times that already work for them. Everyone invited
 votes **preferred**, **yes**, **if necessary** or **no** on each time, from whichever MCP-capable agent they use
 (Claude Desktop, Claude Code, GitHub Copilot, RockBot, ...) or from a web page linked in the invitation
