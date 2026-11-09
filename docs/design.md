@@ -1080,11 +1080,11 @@ The runbook is [deployment.md](deployment.md); the manifests and scripts are in 
    Funnel host, manifests, migration Job and runbook. The first deployment, and the relay and DNS for
    `sched.marimer.llc`, are steps in [deployment.md](deployment.md). Provider webhooks for later bounces and
    complaints are left for when the volume calls for them.
-6. **v1.1.** Push updates with resource subscriptions ([#36](https://github.com/MarimerLLC/scheduler/issues/36);
-   RockBot side [MarimerLLC/rockbot#768](https://github.com/MarimerLLC/rockbot/issues/768); see
+6. **v1.1.** Push updates with resource subscriptions ([#36](https://github.com/MarimerLLC/scheduler/issues/36),
+   done; RockBot side [MarimerLLC/rockbot#768](https://github.com/MarimerLLC/rockbot/issues/768), done; see
    [Push updates](#push-updates-subscriptions-instead-of-tasks)); RockBot integration (an
-   `mcp.json` entry plus handling the invitation emails it already reads through Adjutant); `.ics`
-   fallback invite for organizers without a calendar MCP.
+   `mcp.json` entry, done, plus handling the invitation emails it already reads through Adjutant); `.ics`
+   fallback invite for organizers without a calendar MCP ([#50](https://github.com/MarimerLLC/scheduler/issues/50)).
 
 ## Open questions
 
