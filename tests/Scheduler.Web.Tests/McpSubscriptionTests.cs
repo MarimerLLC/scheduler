@@ -6,6 +6,7 @@ using ModelContextProtocol.Protocol;
 using Microsoft.Extensions.DependencyInjection;
 using Scheduler.Core.Services;
 using Scheduler.Web.Identity;
+using Scheduler.Web.Mcp;
 
 namespace Scheduler.Web.Tests;
 
@@ -242,7 +243,22 @@ public sealed class McpSubscriptionTests
         Assert.AreEqual(ev.ShortCode, status.RootElement.GetProperty("shortCode").GetString());
         Assert.AreEqual("open", status.RootElement.GetProperty("state").GetString());
         Assert.IsFalse(status.RootElement.GetProperty("everyoneResponded").GetBoolean());
+        Assert.AreEqual(0, status.RootElement.GetProperty("milestones").GetArrayLength());
         Assert.AreEqual(16, status.RootElement.GetProperty("marker").GetString()!.Length);
+    }
+
+    [TestMethod]
+    public void Milestones_are_written_as_snake_case_names()
+    {
+        var status = new EventStatusView(Guid.NewGuid(), "ABCD2345", Core.Model.EventState.Open, RespondBy: null, FinalizedSlotId: null,
+            IsOrganizer: true, EveryoneResponded: true, RulesOutEveryTime: ["carol@example.com"],
+            Milestones: [Core.Model.EventMilestone.EveryoneResponded, Core.Model.EventMilestone.RulesOutEveryTime, Core.Model.EventMilestone.Finalized],
+            Marker: "0123456789abcdef");
+
+        using var json = JsonDocument.Parse(ToolJson.Serialize(status));
+
+        CollectionAssert.AreEqual(new[] { "everyone_responded", "rules_out_every_time", "finalized" },
+            json.RootElement.GetProperty("milestones").EnumerateArray().Select(m => m.GetString()).ToArray());
     }
 
     [TestMethod]

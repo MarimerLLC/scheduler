@@ -50,6 +50,8 @@ public sealed class EventStatusTests
         Assert.IsFalse(before.EveryoneResponded);
         Assert.IsTrue(after.EveryoneResponded);
         Assert.AreNotEqual(before.Marker, after.Marker);
+        Assert.IsEmpty(before.Milestones);
+        CollectionAssert.AreEqual(new[] { EventMilestone.EveryoneResponded }, after.Milestones.ToArray());
     }
 
     [TestMethod]
@@ -63,6 +65,53 @@ public sealed class EventStatusTests
 
         Assert.AreNotEqual(before.Marker, after.Marker);
         CollectionAssert.AreEqual(new[] { "carol@example.com" }, after.RulesOutEveryTime!.ToArray());
+        CollectionAssert.AreEqual(new[] { EventMilestone.RulesOutEveryTime }, after.Milestones.ToArray());
+    }
+
+    [TestMethod]
+    public async Task A_second_person_ruling_out_every_time_moves_the_marker_but_not_the_names()
+    {
+        // Dave required too, so Bob's answers don't also complete everyone_responded.
+        var ev = await _h.CreateAsync(Harness.Request(participants:
+            [new("bob@example.com", "Bob"), new("carol@example.com", "Carol"), new("dave@example.com", "Dave")]));
+        await _h.VoteAsync(Harness.Carol, ev, (0, VoteValue.No), (1, VoteValue.No), (2, VoteValue.No));
+        var before = await StatusAsync(Harness.Rocky, ev);
+
+        await _h.VoteAsync(Harness.Bob, ev, (0, VoteValue.No), (1, VoteValue.No), (2, VoteValue.No));
+        var after = await StatusAsync(Harness.Rocky, ev);
+
+        CollectionAssert.AreEqual(before.Milestones.ToArray(), after.Milestones.ToArray(), "names say what, rulesOutEveryTime says who");
+        CollectionAssert.AreEqual(new[] { "bob@example.com", "carol@example.com" }, after.RulesOutEveryTime!.ToArray());
+        Assert.AreNotEqual(before.Marker, after.Marker);
+    }
+
+    [TestMethod]
+    public async Task Finalizing_keeps_the_vote_milestones_and_adds_finalized()
+    {
+        var ev = await _h.CreateAsync();
+        await _h.VoteAsync(Harness.Bob, ev, (0, VoteValue.Yes), (1, VoteValue.Yes), (2, VoteValue.Yes));
+        await _h.VoteAsync(Harness.Carol, ev, (0, VoteValue.Yes), (1, VoteValue.No), (2, VoteValue.Yes));
+
+        await _h.Service.FinalizeAsync(Harness.Rocky, ev.ShortCode, ev.Slots[0].SlotId, ev.Version, None);
+        var after = await StatusAsync(Harness.Rocky, ev);
+
+        CollectionAssert.AreEqual(new[] { EventMilestone.EveryoneResponded, EventMilestone.Finalized }, after.Milestones.ToArray());
+    }
+
+    [TestMethod]
+    public async Task New_times_that_undo_rules_out_every_time_drop_the_milestone()
+    {
+        var ev = await _h.CreateAsync();
+        await _h.VoteAsync(Harness.Carol, ev, (0, VoteValue.No), (1, VoteValue.No), (2, VoteValue.No));
+        var before = await StatusAsync(Harness.Rocky, ev);
+
+        ev = await _h.Service.ProposeMoreSlotsAsync(Harness.Rocky, ev.ShortCode, [new("2026-11-06T10:00", "America/Chicago")],
+            suggestionIds: null, respondBy: null, ev.Version, None);
+        var after = await StatusAsync(Harness.Rocky, ev);
+
+        CollectionAssert.AreEqual(new[] { EventMilestone.RulesOutEveryTime }, before.Milestones.ToArray());
+        Assert.IsEmpty(after.Milestones, "Carol hasn't answered the new time");
+        Assert.AreNotEqual(before.Marker, after.Marker);
     }
 
     [TestMethod]
@@ -95,6 +144,9 @@ public sealed class EventStatusTests
         Assert.AreEqual(finalized.Slots[1].SlotId, after[0].FinalizedSlotId);
         Assert.AreEqual(EventState.Cancelled, after[1].State);
         Assert.AreEqual(EventState.Expired, after[2].State);
+        CollectionAssert.AreEqual(new[] { EventMilestone.Finalized }, after[0].Milestones.ToArray());
+        CollectionAssert.AreEqual(new[] { EventMilestone.Cancelled }, after[1].Milestones.ToArray());
+        CollectionAssert.AreEqual(new[] { EventMilestone.Expired }, after[2].Milestones.ToArray());
     }
 
     [TestMethod]
@@ -110,6 +162,7 @@ public sealed class EventStatusTests
         Assert.IsFalse(after.IsOrganizer);
         Assert.IsNull(after.EveryoneResponded);
         Assert.IsNull(after.RulesOutEveryTime);
+        Assert.IsEmpty(after.Milestones);
         Assert.AreEqual(before.Marker, after.Marker, "everyone required responded and Carol rules out every time, but Bob may not know");
         Assert.IsNotNull(after.RespondBy);
     }
