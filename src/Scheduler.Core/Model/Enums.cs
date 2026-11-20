@@ -15,6 +15,30 @@ public enum EventState
     Expired
 }
 
+/// <summary>
+/// A milestone an event's status names, so an agent, or a rule a person gives it, can match on it. Tools and resources
+/// write these as snake_case (<c>rules_out_every_time</c>). See docs/design.md, "Push updates".
+/// </summary>
+public enum EventMilestone
+{
+    /// <summary>
+    /// Organizer only: every required participant (every participant, if none is required) has answered every current
+    /// time.
+    /// </summary>
+    EveryoneResponded,
+    /// <summary>
+    /// Organizer only: at least one required participant answered no to every current time. The status's
+    /// <c>rulesOutEveryTime</c> says who.
+    /// </summary>
+    RulesOutEveryTime,
+    /// <summary>The organizer picked a time.</summary>
+    Finalized,
+    /// <summary>The organizer called it off.</summary>
+    Cancelled,
+    /// <summary>The respond-by deadline passed without a decision.</summary>
+    Expired
+}
+
 /// <summary>A participant's answer for one proposed slot, worst to best. Only <see cref="No"/> means no.</summary>
 public enum VoteValue
 {

@@ -1130,7 +1130,8 @@ public sealed class SchedulingService(
         var marker = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(fields)))[..16];
 
         return new EventStatusView(
-            ev.Id, ev.ShortCode, ev.State, respondBy, ev.FinalizedSlotId, isOrganizer, everyoneResponded, rulesOutEveryTime, marker);
+            ev.Id, ev.ShortCode, ev.State, respondBy, ev.FinalizedSlotId, isOrganizer, everyoneResponded, rulesOutEveryTime,
+            EventMilestones.Reached(ev.State, everyoneResponded, rulesOutEveryTime), marker);
     }
 
     private static EventView ToView(SchedulingEvent ev, CallerIdentity caller, UserAccount? account, string? viewerTimeZone, IReadOnlyList<string>? notices)

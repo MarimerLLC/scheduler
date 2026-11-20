@@ -136,6 +136,10 @@ public sealed record EventView(
 /// Organizer only: the required participants whose answers are no on every current time, sorted. Null for
 /// participants, who never see others' votes.
 /// </param>
+/// <param name="Milestones">
+/// The milestones reached, by name (<see cref="EventMilestones.Reached"/>): what is true now, derived from the fields
+/// above, so it never moves <see cref="Marker"/> on its own.
+/// </param>
 /// <param name="Marker">A short hash of the other milestone fields.</param>
 public sealed record EventStatusView(
     Guid Id,
@@ -146,6 +150,7 @@ public sealed record EventStatusView(
     bool IsOrganizer,
     bool? EveryoneResponded,
     IReadOnlyList<string>? RulesOutEveryTime,
+    IReadOnlyList<EventMilestone> Milestones,
     string Marker);
 
 /// <summary>

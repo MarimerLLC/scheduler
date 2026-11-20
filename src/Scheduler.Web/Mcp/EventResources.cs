@@ -18,7 +18,7 @@ public sealed class EventResources(ISchedulingService scheduling, IHttpContextAc
         McpCaller.RunAsync(http.HttpContext, caller => scheduling.GetEventAsync(caller, shortCode, viewerTimeZone: null, cancellationToken));
 
     [McpServerResource(UriTemplate = EventResourceUri.StatusTemplate, Name = "event_status", Title = "Scheduling event milestones", MimeType = "application/json")]
-    [Description("An event's milestones: its state, voting deadline and finalized slot, and for the organizer whether every required person has responded and who rules out every time. marker changes exactly when one of them does. Only its organizer and participants can read it.")]
+    [Description("An event's milestones: its state, voting deadline and finalized slot, and for the organizer whether every required person has responded and who rules out every time. milestones names the ones reached now (everyone_responded, rules_out_every_time, finalized, cancelled, expired; a reopened event drops finalized or expired); compare it and rulesOutEveryTime with your last read to see what's new. marker changes exactly when one of the fields does. Only its organizer and participants can read it.")]
     public Task<string> Status(string shortCode, CancellationToken cancellationToken = default) =>
         McpCaller.RunAsync(http.HttpContext, caller => scheduling.GetEventStatusAsync(caller, shortCode, cancellationToken));
 }
